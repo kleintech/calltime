@@ -10,11 +10,14 @@ import { requireProductionEditor } from "@/lib/access";
 import { loadCastIndex } from "@/lib/calls";
 import { callTargetsBelong, copyEvent } from "@/lib/schedule";
 import { eventInputSchema, type EventInput } from "@/lib/schedule-shared";
-import { fromLocalInput, toDateInput } from "@/lib/time";
+import { fromLocalInput, toDateInput, toLocalInput } from "@/lib/time";
 
 type ChangeRow = typeof eventChanges.$inferSelect;
 
 export type ActionResult = { ok: true; id?: string; count?: number } | { ok: false; error: string };
+
+/** Thrown inside a save transaction to abort it with a message for the editor. */
+class SaveError extends Error {}
 
 const uuid = z.uuid();
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -56,6 +59,12 @@ export async function saveEvent(productionId: string, input: EventInput, intent:
 
   const startsAt = fromLocalInput(data.date, tz, data.start);
   const endsAt = fromLocalInput(data.date, tz, data.end);
+  // A wall-clock time skipped by a daylight-saving change would silently shift by an hour.
+  for (const [label, t, d] of [["start", data.start, startsAt], ["end", data.end, endsAt]] as const) {
+    if (toLocalInput(d, tz) !== `${data.date}T${t}`) {
+      return { ok: false, error: `The ${label} time ${t} doesn't exist on ${data.date} (clocks change that night). Pick another time.` };
+    }
+  }
   const blocks = data.blocks.map((b, i) => ({
     startsAt: fromLocalInput(data.date, tz, b.start),
     endsAt: fromLocalInput(data.date, tz, b.end),
@@ -73,7 +82,9 @@ export async function saveEvent(productionId: string, input: EventInput, intent:
   let change: ChangeRow | null = null;
   let firstPublish = false;
 
-  const id = await db.transaction(async (tx) => {
+  let id: string;
+  try {
+    id = await db.transaction(async (tx) => {
     const base = {
       kind: data.kind,
       title: data.title,
@@ -110,6 +121,9 @@ export async function saveEvent(productionId: string, input: EventInput, intent:
 
     // Lock the row so concurrent saves serialize and each material change gets its own revision.
     const [locked] = await tx.select().from(events).where(eq(events.id, existing.id)).for("update");
+    if (locked.status === "cancelled" && intent !== "save") {
+      throw new SaveError("This event is cancelled. Use Restore on the event page to bring it back for families.");
+    }
     const before = await snapshotEvent(tx, locked.id);
     const republish = intent === "publish" && locked.status === "draft" && !!locked.publishedAt;
     firstPublish = intent === "publish" && locked.status === "draft" && !locked.publishedAt;
@@ -148,6 +162,10 @@ export async function saveEvent(productionId: string, input: EventInput, intent:
     }
     return locked.id;
   });
+  } catch (e) {
+    if (e instanceof SaveError) return { ok: false, error: e.message };
+    throw e;
+  }
 
   notifyAfterResponse(change, firstPublish ? [id] : []);
   revalidate(productionId);
@@ -237,6 +255,8 @@ export async function deleteEvent(productionId: string, eventId: string): Promis
   await requireProductionEditor(productionId);
   const ev = await findEvent(productionId, eventId);
   if (!ev) return { ok: false, error: "That event no longer exists." };
+  // Families must see cancellations: anything they could see is cancelled (or unpublished first), never deleted.
+  if (ev.status !== "draft") return { ok: false, error: "Published events can't be deleted — cancel it so families see it's off, or unpublish it first." };
   await db.delete(events).where(eq(events.id, ev.id));
   revalidate(productionId);
   return { ok: true };

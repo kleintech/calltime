@@ -89,7 +89,10 @@ export const eventInputSchema = z
     changeNote: optText(300).optional(),
     blocks: z.array(blockSchema).max(60),
   })
-  .refine((e) => e.end > e.start, { message: "The event must end after it starts" });
+  .refine((e) => e.end > e.start, { message: "The event must end after it starts" })
+  .refine((e) => e.blocks.every((b) => b.start >= e.start && b.end <= e.end), {
+    message: "Every block must fall within the event's start and end times",
+  });
 
 export type EventInput = z.input<typeof eventInputSchema>;
 export type BlockInput = z.input<typeof blockSchema>;

@@ -163,6 +163,20 @@ export async function buildUserFeed(user: User, baseUrl: string): Promise<string
   }
 
   out.sort((a, b) => a.start.getTime() - b.start.getTime());
+  if (out.length === 0) {
+    // RFC 5545 requires at least one component, and some calendar apps show a component-less feed
+    // as broken — which would stick even after calls are published. One free, all-day note instead.
+    const today = new Date();
+    out.push({
+      uid: `${user.id}-placeholder@calltime`,
+      start: today,
+      end: today,
+      allDay: true,
+      summary: "Calltime: no calls yet",
+      description: "Your rehearsal calls appear here automatically once the schedule is published.",
+      sequence: 0,
+    });
+  }
   return buildCalendar({
     name: `Calltime — ${user.name}`,
     description: "Rehearsal and performance calls from Calltime",

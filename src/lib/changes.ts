@@ -136,7 +136,9 @@ async function buildSnapshots(q: DbOrTx, idx: ProductionCastIndex, tz: string, e
     // Team-facing labels name the person; family-facing reasons say "Called individually".
     const labels: Record<string, string> = {};
     for (const bl of blocks) for (const c of bl.calls) labels[key(c)] = targetLabel(idx, c, (id) => personName.get(id) ?? "Individual");
-    const reasonFor = (c: CallTarget) => (c.target === "person" ? "Called individually" : labels[key(c)]);
+    // Reasons are stored as stable keys ("scene:<id>", "title:<block title>", "person") and turned into
+    // words when a change is described, so renaming a scene or role is not reported as a new call.
+    const reasonFor = (c: CallTarget) => (c.target === "person" ? "person" : key(c));
 
     // Same rules as buildCallSheets: earliest block start → latest block end; reasons in block order.
     const calls: Record<string, PersonCallSnap> = {};
@@ -146,7 +148,7 @@ async function buildSnapshots(q: DbOrTx, idx: ProductionCastIndex, tz: string, e
       for (const pid of inBlock) {
         const reasons = resolved
           .filter((r) => r.ppl.has(pid))
-          .map((r) => (b.title && r.c.target !== "scene" ? b.title : reasonFor(r.c)));
+          .map((r) => (b.title && r.c.target !== "scene" ? `title:${b.title}` : reasonFor(r.c)));
         const rooms = b.location ? [b.location] : [];
         const cur = calls[pid];
         if (!cur) calls[pid] = { callAt: b.startsAt.getTime(), releaseAt: b.endsAt.getTime(), reasons: [...new Set(reasons)], rooms };
@@ -258,9 +260,10 @@ export function describePersonImpact(before: EventSnapshot, after: EventSnapshot
       } else if (reinstated) parts.push(`${republished ? "Back on the schedule" : "Back on"} — called ${callText(now, tz, false)}`);
       const added = now.reasons.filter((r) => !was.reasons.includes(r));
       const dropped = was.reasons.filter((r) => !now.reasons.includes(r));
-      const IND = "Called individually";
-      const addedR = added.filter((r) => r !== IND);
-      const droppedR = dropped.filter((r) => r !== IND);
+      const IND = "person";
+      const text = (k: string) => (k.startsWith("title:") ? k.slice(6) : after.labels[k] ?? before.labels[k] ?? "a scene");
+      const addedR = added.filter((r) => r !== IND).map(text);
+      const droppedR = dropped.filter((r) => r !== IND).map(text);
       if (addedR.length) parts.push(`now rehearsing ${addedR.join(", ")}`);
       if (added.includes(IND)) parts.push("now also called individually");
       if (droppedR.length) parts.push(`no longer ${droppedR.join(", ")}`);
@@ -270,7 +273,7 @@ export function describePersonImpact(before: EventSnapshot, after: EventSnapshot
     }
     if (now && (a.location ?? "") !== (b.location ?? "")) parts.push(b.location ? `location now ${b.location}` : "location changed");
     if (now && a.kind !== b.kind) parts.push(`now a ${b.kind}`);
-    if (republished && parts.length && !/^back on/i.test(parts[0])) parts.unshift("Back on the schedule");
+    if (republished && parts.length && !/^back on/i.test(parts[0]) && !(was && !now)) parts.unshift("Back on the schedule");
     if (parts.length) out[pid] = parts.join("; ").replace(/^./, (ch) => ch.toUpperCase());
   }
   return out;
@@ -629,7 +632,9 @@ export async function notifyEventChange(change: typeof eventChanges.$inferSelect
     const total = { sent: 0, failed: 0, removed: 0 };
     for (const [userId, pids] of byUser) {
       const lines = [...pids].map((pid) => `${names.get(pid) ?? "Someone"}: ${change.personSummaries[pid] ?? change.summary}`);
-      const r = await sendPushToUsers([userId], { title, body: lines.join("\n"), url: eventUrl(ctx.event), tag: `event-${change.eventId}` });
+      // Families can't open an unpublished event (404), so a "Removed" push lands on My Calls.
+      const url = ctx.event.status === "draft" ? "/home" : eventUrl(ctx.event);
+      const r = await sendPushToUsers([userId], { title, body: lines.join("\n"), url, tag: `event-${change.eventId}` });
       total.sent += r.sent;
       total.failed += r.failed;
       total.removed += r.removed;

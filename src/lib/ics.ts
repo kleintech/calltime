@@ -22,6 +22,8 @@ export type IcsEvent = {
   /** Defaults to "now" (time the feed was generated). */
   dtstamp?: Date;
   url?: string | null;
+  /** Whole-day informational entry (DTSTART;VALUE=DATE), shown as free time. */
+  allDay?: boolean;
 };
 
 export type IcsCalendar = {
@@ -104,8 +106,14 @@ export function buildCalendar(cal: IcsCalendar): string {
     lines.push("BEGIN:VEVENT");
     lines.push(prop("UID", e.uid));
     lines.push(`DTSTAMP:${formatUtc(e.dtstamp ?? now)}`);
-    lines.push(`DTSTART:${formatUtc(e.start)}`);
-    lines.push(`DTEND:${formatUtc(e.end > e.start ? e.end : new Date(e.start.getTime() + 60_000))}`);
+    if (e.allDay) {
+      const day = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+      lines.push(`DTSTART;VALUE=DATE:${day(e.start)}`);
+      lines.push(`DTEND;VALUE=DATE:${day(new Date(e.start.getTime() + 86400_000))}`);
+    } else {
+      lines.push(`DTSTART:${formatUtc(e.start)}`);
+      lines.push(`DTEND:${formatUtc(e.end > e.start ? e.end : new Date(e.start.getTime() + 60_000))}`);
+    }
     lines.push(`SEQUENCE:${Math.max(0, Math.trunc(e.sequence ?? 0))}`);
     if (e.lastModified) lines.push(`LAST-MODIFIED:${formatUtc(e.lastModified)}`);
     lines.push(prop("SUMMARY", escapeText(e.summary)));
@@ -113,7 +121,7 @@ export function buildCalendar(cal: IcsCalendar): string {
     if (e.location) lines.push(prop("LOCATION", escapeText(e.location)));
     if (e.url) lines.push(prop("URL", e.url));
     lines.push(`STATUS:${e.status ?? "CONFIRMED"}`);
-    lines.push("TRANSP:OPAQUE");
+    lines.push(e.allDay ? "TRANSP:TRANSPARENT" : "TRANSP:OPAQUE");
     lines.push("END:VEVENT");
   }
   lines.push("END:VCALENDAR");

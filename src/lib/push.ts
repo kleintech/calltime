@@ -25,7 +25,7 @@ let configured: boolean | null = null;
 /** True when VAPID keys are present (and configures web-push once). */
 export function pushConfigured() {
   if (configured !== null) return configured;
-  const pub = process.env.VAPID_PUBLIC_KEY;
+  const pub = process.env.VAPID_PUBLIC_KEY ?? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const priv = process.env.VAPID_PRIVATE_KEY;
   const subject = process.env.VAPID_SUBJECT || "mailto:admin@calltime.app";
   configured = !!(pub && priv);

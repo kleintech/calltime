@@ -11,7 +11,7 @@ import {
   schedulePublishNotification,
   snapshotEvent,
 } from "@/lib/changes";
-import { fmtRange } from "@/lib/time";
+import { fmtRange, toLocalInput } from "@/lib/time";
 import { loadGroups, loadRoles, loadScenes, requireRoles, requireScene } from "./production";
 import {
   type Ctx,
@@ -247,6 +247,7 @@ export async function createEvent(
         ? new Date(Math.max(...blocks.map((b) => b.end.getTime())))
         : fail("Give `end`.");
     if (end <= start) fail("end must be after start.");
+    assertBlocksWithin(blocks, start, end);
     const [ev] = await tx
       .insert(events)
       .values({
@@ -267,6 +268,12 @@ export async function createEvent(
     if (ev.status === "published") schedulePublishNotification(ev.id); // runs after the response
     return (await summarizeEvents(ctx, p.id, [ev]))[0];
   });
+}
+
+/** Blocks outside the event's own times would give families calls the schedule never shows. */
+function assertBlocksWithin(blocks: { start: Date; end: Date }[], start: Date, end: Date) {
+  const bad = blocks.find((b) => b.start < start || b.end > end);
+  if (bad) fail(`Block ${toLocalInput(bad.start, "UTC")}Z–${toLocalInput(bad.end, "UTC")}Z falls outside the event (${start.toISOString()}–${end.toISOString()}). Widen start/end or move the block.`);
 }
 
 export async function updateEvent(
@@ -302,13 +309,17 @@ export async function updateEvent(
     let start = input.start ? parseTime(input.start, ctx.timezone, "start") : null;
     let end = input.end ? parseTime(input.end, ctx.timezone, "end") : null;
     if (blocks?.length) {
-      // Keep the event envelope around its blocks unless explicit times were given.
-      start ??= new Date(Math.min(...blocks.map((b) => b.start.getTime())));
-      end ??= new Date(Math.max(...blocks.map((b) => b.end.getTime())));
+      // Without explicit times, only widen the envelope so it still contains every block — never
+      // shrink a published rehearsal to the blocks (families would be told the start moved).
+      const first = Math.min(...blocks.map((b) => b.start.getTime()));
+      const last = Math.max(...blocks.map((b) => b.end.getTime()));
+      start ??= new Date(Math.min(event.startsAt.getTime(), first));
+      end ??= new Date(Math.max(event.endsAt.getTime(), last));
     }
     if (start && start.getTime() !== event.startsAt.getTime()) set.startsAt = start;
     if (end && end.getTime() !== event.endsAt.getTime()) set.endsAt = end;
     if ((set.endsAt ?? event.endsAt) <= (set.startsAt ?? event.startsAt)) fail("end must be after start.");
+    if (blocks) assertBlocksWithin(blocks, set.startsAt ?? event.startsAt, set.endsAt ?? event.endsAt);
     let [row] = Object.keys(set).length ? await tx.update(events).set(set).where(eq(events.id, event.id)).returning() : [event];
 
     // Material = something families would notice (event diff or anyone's own call). Block notes or
@@ -369,7 +380,7 @@ export async function publishEvents(
       .update(events)
       .set({
         status: "published",
-        publishedAt: new Date(),
+        publishedAt: e.publishedAt ?? new Date(),
         // Drop a legacy "Cancelled: <reason>" line older cancel_event versions added to notes.
         notes: e.status === "cancelled" ? e.notes?.replace(CANCEL_NOTE, "") || null : e.notes,
         // Reinstating a cancelled event is a change families must see.
@@ -393,13 +404,13 @@ export async function publishEvents(
 export async function cancelEvent(ctx: Ctx, id: string, reason?: string | null) {
   const { event } = await getEvent(ctx, id);
   if (event.status === "cancelled") return { id, status: "cancelled", note: "already cancelled" };
-  if (event.status === "draft" && !event.publishedAt)
-    fail("This event was never published, so families never saw it — delete it instead (delete_event).");
+  // Cancelling a draft would put it in front of families for the first time (as cancelled).
+  if (event.status === "draft") fail("Drafts aren't visible to families — delete it instead (delete_event), or publish it first.");
   let change: Awaited<ReturnType<typeof recordEventChange>> = null;
   const row = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(events).where(eq(events.id, event.id)).for("update");
     if (locked.status === "cancelled") return locked;
-    if (locked.status === "draft" && !locked.publishedAt) fail("This event was never published — delete it instead.");
+    if (locked.status === "draft") fail("Drafts aren't visible to families — delete it instead.");
     const before = await snapshotEvent(tx, event.id);
     const wasVisible = locked.status === "published";
     const [r] = await tx
@@ -421,6 +432,8 @@ export async function cancelEvent(ctx: Ctx, id: string, reason?: string | null) 
 
 export async function deleteEvent(ctx: Ctx, id: string) {
   const { event } = await getEvent(ctx, id);
+  // Families must see cancellations: anything they could see is cancelled, never deleted.
+  if (event.status !== "draft") fail("Published events can't be deleted — use cancel_event so families see it's off.");
   await db.delete(events).where(eq(events.id, event.id));
   return { deleted: event.id, title: event.title, wasStatus: event.status };
 }

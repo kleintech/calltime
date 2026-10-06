@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { people } from "@/db/schema";
-import { Avatar, BackLink, Badge, buttonClass, CallTime, Card, cn, LinkButton, Notice, SectionTitle, TimePill } from "@/components/ui";
+import { Avatar, BackLink, Badge, CallTime, Card, cn, LinkButton, Menu, Notice, SectionTitle, TimePill } from "@/components/ui";
 import { getCoveredPersonIds, requireProductionAccess } from "@/lib/access";
 import { getEventCallSheet } from "@/lib/calls";
 import { getAckStatus, getUnacknowledgedChanges } from "@/lib/changes";
@@ -265,38 +265,32 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
             >
               <Trash className="size-4" /> Delete draft
             </ActionButton>
-          ) : (
-            <details className="group relative">
-              <summary className={cn(buttonClass("ghost"), "list-none [&::-webkit-details-marker]:hidden")}>
-                <Ellipsis className="size-4" /> More
-              </summary>
-              <div className="absolute right-0 z-20 mt-2 w-72 space-y-2 rounded-2xl border border-line bg-surface p-3 shadow-lg sm:left-0 sm:right-auto">
+          ) : ev.status === "published" ? (
+            <Menu
+              id="event-more"
+              label="More"
+              trigger={
+                <>
+                  <Ellipsis className="size-4" /> More
+                </>
+              }
+            >
+              <div className="max-w-xs space-y-2 p-2">
                 <p className="text-xs text-muted">
-                  These make the event disappear from families&apos; schedules without a trace. Usually you want <strong>Cancel</strong> instead, so
-                  they see it&apos;s off.
+                  Unpublishing makes the event disappear from families&apos; schedules without a trace. Usually you want <strong>Cancel</strong>{" "}
+                  instead, so they see it&apos;s off. Published events can&apos;t be deleted.
                 </p>
-                {ev.status === "published" ? (
-                  <ActionButton
-                    action={setEventStatus.bind(null, productionId, ev.id, "unpublish", undefined)}
-                    confirm="Move back to draft? It disappears from families' schedules and calendars (they won't see a cancellation)."
-                    variant="secondary"
-                    className="w-full"
-                  >
-                    <Undo2 className="size-4" /> Unpublish to draft
-                  </ActionButton>
-                ) : null}
                 <ActionButton
-                  action={deleteEvent.bind(null, productionId, ev.id)}
-                  confirm="Delete this event permanently? Families won't see that it was cancelled. Cancel instead if it's simply not happening."
-                  then={base}
-                  variant="danger"
+                  action={setEventStatus.bind(null, productionId, ev.id, "unpublish", undefined)}
+                  confirm="Move back to draft? It disappears from families' schedules and calendars (they won't see a cancellation)."
+                  variant="secondary"
                   className="w-full"
                 >
-                  <Trash className="size-4" /> Delete anyway
+                  <Undo2 className="size-4" /> Unpublish to draft
                 </ActionButton>
               </div>
-            </details>
-          )}
+            </Menu>
+          ) : null}
         </div>
       ) : null}
 
