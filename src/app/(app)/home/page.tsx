@@ -133,7 +133,11 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
   }
 
   // Announcements for the shows the user's people are in: pinned, or posted in the last 7 days
-  const castProdIds = productions.filter((p) => p.relation === "cast" || allCalls.some((c) => c.production.id === p.production.id)).map((p) => p.production.id);
+  // Closed shows stay reachable from Shows, but don't clutter My Calls with their links/announcements.
+  const castProdIds = productions
+    .filter((p) => p.production.status !== "closed")
+    .filter((p) => p.relation === "cast" || allCalls.some((c) => c.production.id === p.production.id))
+    .map((p) => p.production.id);
   const annRows = castProdIds.length
     ? await db
         .select()
