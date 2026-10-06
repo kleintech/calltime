@@ -14,6 +14,9 @@ export type ProductionTab = { href: string; label: string; count?: number };
  * exactly). `more` collapses rarely-used tabs into a "More" sheet.
  */
 export function ProductionTabs({ tabs, base, more }: { tabs: ProductionTab[]; base: string; more?: ProductionTab[] }) {
+  const pathname = usePathname();
+  // The event editor holds unsaved work; keep the sticky section tabs out of thumb's reach there.
+  if (/\/schedule\/(new|[^/]+\/edit)$/.test(pathname)) return null;
   return <NavTabs tabs={tabs} more={more} exact={base} sticky aria-label="Production sections" className="mb-6" />;
 }
 

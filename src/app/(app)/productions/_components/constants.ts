@@ -30,6 +30,9 @@ export const ASSIGNMENT_KINDS = [
   { value: "swing", label: "Swing" },
 ] as const;
 
+/** "understudy" → "Understudy" (never show the raw enum). */
+export const kindLabel = (kind: string) => ASSIGNMENT_KINDS.find((k) => k.value === kind)?.label ?? kind;
+
 export const CREATIVE_TITLES = [
   "Director",
   "Assistant Director",

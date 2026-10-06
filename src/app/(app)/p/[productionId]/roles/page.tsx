@@ -8,7 +8,7 @@ import { Sheet } from "@/components/sheet";
 import { requireProductionEditor } from "@/lib/access";
 import { personName } from "@/lib/production-queries";
 import { IconSubmit } from "@/app/(app)/productions/_components/form";
-import { ROLE_KINDS } from "@/app/(app)/productions/_components/constants";
+import { ROLE_KINDS, kindLabel } from "@/app/(app)/productions/_components/constants";
 import { createGroup, createRole, moveRole } from "./actions";
 import { GroupForm, RoleForm } from "./forms";
 
@@ -112,7 +112,7 @@ export default async function RolesPage({ params }: PageProps<"/p/[productionId]
                             who.map((a) => (
                               <Badge key={a.person.id} tone={a.kind === "primary" ? "neutral" : "gold"}>
                                 {personName(a.person)}
-                                {a.kind !== "primary" ? ` · ${a.kind}` : ""}
+                                {a.kind !== "primary" ? ` · ${kindLabel(a.kind)}` : ""}
                               </Badge>
                             ))
                           ) : (
@@ -122,12 +122,12 @@ export default async function RolesPage({ params }: PageProps<"/p/[productionId]
                       </Link>
                       <div className="flex shrink-0 flex-col justify-center border-l border-line">
                         <form action={moveRole.bind(null, productionId, r.id, "up")}>
-                          <IconSubmit label="Move up" className={i === 0 ? "invisible" : ""}>
+                          <IconSubmit label={`Move ${r.name} up`} className={i === 0 ? "invisible" : ""}>
                             <ArrowUp className="size-4" />
                           </IconSubmit>
                         </form>
                         <form action={moveRole.bind(null, productionId, r.id, "down")}>
-                          <IconSubmit label="Move down" className={i === list.length - 1 ? "invisible" : ""}>
+                          <IconSubmit label={`Move ${r.name} down`} className={i === list.length - 1 ? "invisible" : ""}>
                             <ArrowDown className="size-4" />
                           </IconSubmit>
                         </form>

@@ -148,12 +148,12 @@ export default async function ScenesPage({ params }: PageProps<"/p/[productionId
                       </Link>
                       <div className="flex shrink-0 flex-col justify-center border-l border-line">
                         <form action={moveScene.bind(null, productionId, s.id, "up")}>
-                          <IconSubmit label="Move up" className={i === 0 ? "invisible" : ""}>
+                          <IconSubmit label={`Move ${s.name} up`} className={i === 0 ? "invisible" : ""}>
                             <ArrowUp className="size-4" />
                           </IconSubmit>
                         </form>
                         <form action={moveScene.bind(null, productionId, s.id, "down")}>
-                          <IconSubmit label="Move down" className={i === inAct.length - 1 ? "invisible" : ""}>
+                          <IconSubmit label={`Move ${s.name} down`} className={i === inAct.length - 1 ? "invisible" : ""}>
                             <ArrowDown className="size-4" />
                           </IconSubmit>
                         </form>

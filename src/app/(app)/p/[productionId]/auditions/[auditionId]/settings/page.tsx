@@ -17,7 +17,7 @@ export default async function AuditionSettings({ params }: PageProps<"/p/[produc
     <div>
       <Card className="space-y-3">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted">Public signup link</p>
-        <a href={url} target="_blank" className="block break-all font-display text-2xl font-semibold text-accent sm:text-3xl">
+        <a href={url} target="_blank" rel="noopener noreferrer" className="block break-all font-display text-2xl font-semibold text-accent sm:text-3xl">
           {url.replace(/^https?:\/\//, "")}
         </a>
         <p className="text-sm text-muted">Big enough to photograph or project. Post it, text it, or print it on a flyer.</p>

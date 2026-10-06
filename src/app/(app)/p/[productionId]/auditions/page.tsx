@@ -73,7 +73,7 @@ export default async function AuditionsIndex({ params }: PageProps<"/p/[producti
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-[.08em] text-muted">Public signup link</p>
-                        <a href={url} target="_blank" className="block break-all text-[15px] font-semibold text-accent hover:underline">
+                        <a href={url} target="_blank" rel="noopener noreferrer" className="block break-all text-[15px] font-semibold text-accent hover:underline">
                           {url.replace(/^https?:\/\//, "")}
                         </a>
                       </div>

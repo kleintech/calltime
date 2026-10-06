@@ -2,8 +2,9 @@
 
 import { ArrowDown, ArrowUp, ChevronDown, Plus, TriangleAlert, Trash, UserPlus, Users, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { Avatar, Button, cn, Field, Input, Notice, Textarea, TimePill } from "@/components/ui";
+import { toast } from "@/components/toast";
 import {
   EVENT_KINDS,
   KIND_META,
@@ -59,6 +60,92 @@ export function EventEditor({
     initial.blocks.map((b) => ({ ...b, key: newKey(), more: !!(b.location || b.notes) })),
   );
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+
+  /*
+   * Never lose a half-built rehearsal: every change is mirrored to sessionStorage (per event, per
+   * tab) and offered back after a mis-tap or reload; leaving with unsaved changes asks first.
+   */
+  const draftKey = `calltime:event-editor:${initial.id ?? `new:${productionId}`}`;
+  const normalize = (e: typeof ev, bs: BlockInput[]) =>
+    JSON.stringify({
+      ev: { kind: e.kind, title: e.title, date: e.date, start: e.start, end: e.end, location: e.location ?? "", notes: e.notes ?? "" },
+      blocks: bs.map(({ start, end, title, leader, location, notes, calls }) => ({ start, end, title, leader, location, notes, calls })),
+    });
+  const initialJson = useMemo(
+    () => normalize({ kind: initial.kind, title: initial.title, date: initial.date, start: initial.start, end: initial.end, location: initial.location ?? "", notes: initial.notes ?? "" }, initial.blocks),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` comes from the server and is stable for this editor instance
+    [initial],
+  );
+  const currentJson = normalize(ev, blocks);
+  const dirty = currentJson !== initialJson;
+  const saved = useRef(false);
+  // The draft left behind by an earlier visit (read client-side only; null during SSR).
+  const storedDraft = useSyncExternalStore(
+    (cb) => {
+      window.addEventListener("storage", cb);
+      return () => window.removeEventListener("storage", cb);
+    },
+    () => {
+      try {
+        return window.sessionStorage.getItem(draftKey);
+      } catch {
+        return null;
+      }
+    },
+    () => null,
+  );
+  const [draftHandled, setDraftHandled] = useState(false);
+  const offerDraft = !draftHandled && !dirty && !!storedDraft && storedDraft !== initialJson;
+  const restoreDraft = () => {
+    try {
+      const parsed = JSON.parse(storedDraft ?? "") as { ev: typeof ev; blocks: BlockInput[] };
+      setEv(parsed.ev);
+      setBlocks(parsed.blocks.map((b) => ({ ...b, key: newKey(), more: !!(b.location || b.notes) })));
+    } catch {
+      /* corrupt draft: nothing to restore */
+    }
+    setDraftHandled(true);
+  };
+  useEffect(() => {
+    try {
+      if (dirty && !saved.current) window.sessionStorage.setItem(draftKey, currentJson);
+      else if (draftHandled || saved.current) window.sessionStorage.removeItem(draftKey);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [dirty, currentJson, draftKey, draftHandled]);
+  useEffect(() => {
+    if (!dirty || saved.current) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  const discardDraft = () => {
+    setDraftHandled(true);
+    try {
+      window.sessionStorage.removeItem(draftKey);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /* Removals are cheap to undo, so they get a toast with Undo instead of a confirm dialog. */
+  const removeBlock = (i: number) => {
+    const removed = blocks[i];
+    setBlocks((bs) => bs.filter((_, j) => j !== i));
+    toast(`Block ${i + 1} removed`, {
+      action: { label: "Undo", onClick: () => setBlocks((bs) => [...bs.slice(0, i), removed, ...bs.slice(i)]) },
+    });
+  };
+  const removeCall = (b: Block, c: CallRef, i: number) => {
+    const label = options.labels[callKey(c)] ?? "Call";
+    patchBlock(b.key, { calls: b.calls.filter((x) => callKey(x) !== callKey(c)) });
+    toast(`${label} removed from block ${i + 1}`, {
+      action: { label: "Undo", onClick: () => setBlocks((bs) => bs.map((x) => (x.key === b.key && !x.calls.some((y) => callKey(y) === callKey(c)) ? { ...x, calls: [...x.calls, c] } : x))) },
+    });
+  };
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [changeNote, setChangeNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +244,21 @@ export function EventEditor({
     start(async () => {
       const r = await saveEvent(productionId, payload, intent);
       if (!r.ok) return setError(r.error);
+      saved.current = true;
+      try {
+        window.sessionStorage.removeItem(draftKey);
+      } catch {
+        /* ignore */
+      }
+      const n = preview.list.length;
+      toast(
+        intent === "publish"
+          ? `Published. ${n} ${n === 1 ? "person sees their call" : "people see their calls"}.`
+          : status === "published"
+            ? "Saved. Families see the change right away."
+            : "Draft saved — only the team can see it.",
+        { tone: "success" },
+      );
       router.push(`/p/${productionId}/schedule/${r.id}`);
       router.refresh();
     });
@@ -181,7 +283,27 @@ export function EventEditor({
         </div>
       ) : status === "published" ? (
         <div className="mb-4">
-          <Notice>This event is published. Saved changes show up for families (and in their calendars) right away.</Notice>
+          <Notice>Published — families can see it. Saved changes show up for them (and in their calendars) right away.</Notice>
+        </div>
+      ) : null}
+      {offerDraft ? (
+        <div className="mb-4">
+          <Notice
+            tone="accent"
+            title="You have unsaved changes from earlier"
+            action={
+              <span className="flex gap-1">
+                <Button type="button" size="sm" variant="ghost" onClick={discardDraft}>
+                  Discard
+                </Button>
+                <Button type="button" size="sm" variant="soft" onClick={restoreDraft}>
+                  Restore
+                </Button>
+              </span>
+            }
+          >
+            We kept them when you left this page.
+          </Notice>
         </div>
       ) : null}
       {/* ── Event basics ── */}
@@ -222,10 +344,10 @@ export function EventEditor({
             <Input type="time" step={900} value={ev.end} onChange={(e) => e.target.value && set("end", e.target.value)} required />
           </Field>
         </div>
-        <Field label="Location">
+        <Field label="Location" optional>
           <Input value={ev.location} onChange={(e) => set("location", e.target.value)} placeholder={options.defaultLocation || "Where?"} maxLength={200} />
         </Field>
-        <Field label="Notes for cast & families" hint="Shown on the event. e.g. “Bring a lunch”, “Wear character shoes”.">
+        <Field label="Notes for cast & families" optional hint="Shown on the event. e.g. “Bring a lunch”, “Wear character shoes”.">
           <Textarea value={ev.notes} onChange={(e) => set("notes", e.target.value)} maxLength={4000} className="min-h-20" />
         </Field>
       </section>
@@ -264,7 +386,7 @@ export function EventEditor({
                   <button
                     type="button"
                     className="inline-flex size-11 items-center justify-center rounded-lg text-muted hover:bg-danger-soft hover:text-danger"
-                    onClick={() => (b.calls.length === 0 || window.confirm(`Remove block ${i + 1} and its calls?`)) && setBlocks((bs) => bs.filter((x) => x.key !== b.key))}
+                    onClick={() => removeBlock(i)}
                     aria-label={`Remove block ${i + 1}`}
                   >
                     <Trash className="size-4" />
@@ -273,10 +395,10 @@ export function EventEditor({
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <Field label="From">
-                  <Input type="time" step={900} value={b.start} onChange={(e) => e.target.value && patchBlock(b.key, { start: e.target.value })} />
+                  <Input type="time" step={900} value={b.start} aria-label={`Block ${i + 1} from`} aria-invalid={b.end <= b.start || undefined} onChange={(e) => e.target.value && patchBlock(b.key, { start: e.target.value })} />
                 </Field>
                 <Field label="To">
-                  <Input type="time" step={900} value={b.end} onChange={(e) => e.target.value && patchBlock(b.key, { end: e.target.value })} />
+                  <Input type="time" step={900} value={b.end} aria-label={`Block ${i + 1} to`} aria-invalid={b.end <= b.start || undefined} onChange={(e) => e.target.value && patchBlock(b.key, { end: e.target.value })} />
                 </Field>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Set length">
@@ -298,11 +420,23 @@ export function EventEditor({
                   );
                 })}
               </div>
-              {b.end <= b.start ? <p className="mt-1 text-xs text-danger">Ends before it starts.</p> : outside(b) ? <p className="mt-1 text-xs text-warn">Runs outside the event&apos;s {fmtRange(instant(ev.start) ?? new Date(), instant(ev.end) ?? new Date(), tz)}.</p> : null}
+              {b.end <= b.start ? (
+                <p role="alert" className="mt-1 text-sm text-danger">
+                  Block {i + 1} ends before it starts.
+                </p>
+              ) : outside(b) ? (
+                <p role="alert" className="mt-1 text-sm text-warn">
+                  Block {i + 1} runs outside the event&apos;s {fmtRange(instant(ev.start) ?? new Date(), instant(ev.end) ?? new Date(), tz)} — widen the event or move the block.
+                </p>
+              ) : null}
 
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <Input value={b.title} onChange={(e) => patchBlock(b.key, { title: e.target.value })} placeholder="Title (optional)" aria-label="Block title" maxLength={200} />
-                <Input value={b.leader} onChange={(e) => patchBlock(b.key, { leader: e.target.value })} placeholder="Led by" aria-label="Led by" list="ct-leaders" maxLength={100} />
+                <Field label="Title" optional>
+                  <Input value={b.title} onChange={(e) => patchBlock(b.key, { title: e.target.value })} placeholder="e.g. Choreo" maxLength={200} />
+                </Field>
+                <Field label="Led by" optional>
+                  <Input value={b.leader} onChange={(e) => patchBlock(b.key, { leader: e.target.value })} placeholder="Director" list="ct-leaders" maxLength={100} />
+                </Field>
               </div>
               {b.more ? (
                 <div className="mt-2 space-y-2">
@@ -317,15 +451,15 @@ export function EventEditor({
 
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {b.calls.map((c) => (
-                  <span key={callKey(c)} className="inline-flex min-h-9 items-center gap-1 rounded-full bg-accent-soft pl-3.5 pr-1 text-sm font-semibold text-accent">
+                  <span key={callKey(c)} className="inline-flex min-h-10 items-center gap-0.5 rounded-full bg-accent-soft pl-3.5 pr-0.5 text-sm font-semibold text-accent">
                     {options.labels[callKey(c)] ?? "Unknown"}
                     <button
                       type="button"
-                      className="inline-flex size-7 items-center justify-center rounded-full hover:bg-accent/15"
-                      onClick={() => patchBlock(b.key, { calls: b.calls.filter((x) => callKey(x) !== callKey(c)) })}
-                      aria-label="Remove"
+                      className="inline-flex size-9 items-center justify-center rounded-full hover:bg-accent/15"
+                      onClick={() => removeCall(b, c as CallRef, i)}
+                      aria-label={`Remove ${options.labels[callKey(c)] ?? "call"} from block ${i + 1}`}
                     >
-                      <X className="size-3.5" />
+                      <X className="size-4" />
                     </button>
                   </span>
                 ))}
@@ -443,7 +577,7 @@ export function EventEditor({
             <>
               <p className="min-w-0 flex-1 px-2 text-xs text-muted">Changes to times, places or calls show families an “Updated” badge.</p>
               <Button type="button" disabled={pending} onClick={() => submit("save")}>
-                {pending ? "Saving…" : "Save changes"}
+                {pending ? "Saving…" : "Save for families"}
               </Button>
             </>
           ) : status === "cancelled" ? (

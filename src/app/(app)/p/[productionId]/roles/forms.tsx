@@ -87,7 +87,7 @@ function RoleChips({ roles, selected }: { roles: RoleOption[]; selected: string[
             <label
               key={r.id}
               className={cn(
-                "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3 text-sm select-none",
+                "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3 text-sm select-none has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent",
                 on ? "border-accent bg-accent-soft text-accent" : "border-line bg-surface",
               )}
             >

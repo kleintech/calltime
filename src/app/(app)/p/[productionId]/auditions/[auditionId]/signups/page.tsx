@@ -78,7 +78,7 @@ export default async function SignupsPage({ params, searchParams }: PageProps<"/
       <form className="relative mb-3" action={`${base}/signups`}>
         {status ? <input type="hidden" name="status" value={status} /> : null}
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-        <Input name="q" defaultValue={q} placeholder="Search name, email, guardian, role" className="pl-9" type="search" />
+        <Input name="q" defaultValue={q} placeholder="Search name, email, guardian, role" aria-label="Search signups" className="pl-9" type="search" />
       </form>
       <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
         {chips.map((c) => (

@@ -444,13 +444,13 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
                                       <span className="text-muted">{gd.relationship}:</span>
                                       <span>{gd.name}</span>
                                       {gd.phone ? (
-                                        <a href={`tel:${gd.phone}`} className="inline-flex items-center gap-0.5 text-accent">
-                                          <Phone className="size-3" /> {gd.phone}
+                                        <a href={`tel:${gd.phone}`} className="-my-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1.5 text-sm text-accent">
+                                          <Phone className="size-3.5" /> {gd.phone}
                                         </a>
                                       ) : null}
                                       {gd.email ? (
-                                        <a href={`mailto:${gd.email}`} className="inline-flex items-center gap-0.5 text-accent">
-                                          <Mail className="size-3" /> {gd.email}
+                                        <a href={`mailto:${gd.email}`} className="-my-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1.5 text-sm text-accent">
+                                          <Mail className="size-3.5" /> {gd.email}
                                         </a>
                                       ) : null}
                                     </p>
@@ -461,13 +461,13 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
                               ) : p?.phone || p?.email ? (
                                 <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs">
                                   {p.phone ? (
-                                    <a href={`tel:${p.phone}`} className="inline-flex items-center gap-0.5 text-accent">
-                                      <Phone className="size-3" /> {p.phone}
+                                    <a href={`tel:${p.phone}`} className="-my-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1.5 text-sm text-accent">
+                                      <Phone className="size-3.5" /> {p.phone}
                                     </a>
                                   ) : null}
                                   {p.email ? (
-                                    <a href={`mailto:${p.email}`} className="inline-flex items-center gap-0.5 text-accent">
-                                      <Mail className="size-3" /> {p.email}
+                                    <a href={`mailto:${p.email}`} className="-my-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1.5 text-sm text-accent">
+                                      <Mail className="size-3.5" /> {p.email}
                                     </a>
                                   ) : null}
                                 </p>

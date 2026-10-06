@@ -48,7 +48,7 @@ export function AnnouncementList({
                     {a.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
                   </IconSubmit>
                 </form>
-                <ConfirmForm action={deleteAnnouncement.bind(null, productionId, a.id)} confirm={`Delete “${a.title}”?`}>
+                <ConfirmForm action={deleteAnnouncement.bind(null, productionId, a.id)} confirm={`Delete “${a.title}”? Families will no longer see it.`}>
                   <IconSubmit label="Delete">
                     <Trash2 className="size-4" />
                   </IconSubmit>

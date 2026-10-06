@@ -156,7 +156,7 @@ export default async function CallbacksPage({ params }: PageProps<"/p/[productio
                         {prodRoles.map((r) => (
                           <label
                             key={r.id}
-                            className="flex min-h-10 cursor-pointer items-center gap-2 rounded-full border border-line px-3 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:checked]:text-accent"
+                            className="flex min-h-11 cursor-pointer items-center gap-2 rounded-full border border-line px-3 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:checked]:text-accent has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
                           >
                             <input
                               type="checkbox"

@@ -32,6 +32,7 @@ export default async function AuditionLayout({ children, params }: LayoutProps<"
         <a
           href={`/audition/${audition.slug}`}
           target="_blank"
+          rel="noopener noreferrer"
           className="-my-2 inline-flex min-h-11 items-center text-sm font-medium text-accent hover:underline"
         >
           Public page: /audition/{audition.slug} ↗

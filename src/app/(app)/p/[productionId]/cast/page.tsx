@@ -9,6 +9,7 @@ import { getAttendanceSummary } from "@/lib/schedule";
 import { personName } from "@/lib/production-queries";
 import { assignRole } from "./actions";
 import { AssignForm } from "./forms";
+import { kindLabel } from "@/app/(app)/productions/_components/constants";
 
 export default async function CastPage({ params, searchParams }: PageProps<"/p/[productionId]/cast">) {
   const { productionId } = await params;
@@ -151,7 +152,7 @@ export default async function CastPage({ params, searchParams }: PageProps<"/p/[
                     {e.roles.map((r) => (
                       <Badge key={r.roleId} tone={r.kind === "primary" ? "accent" : "gold"}>
                         {roleById.get(r.roleId)?.name}
-                        {r.kind !== "primary" ? ` · ${r.kind}` : ""}
+                        {r.kind !== "primary" ? ` · ${kindLabel(r.kind)}` : ""}
                       </Badge>
                     ))}
                   </div>

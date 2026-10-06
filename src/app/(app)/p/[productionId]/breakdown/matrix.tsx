@@ -133,6 +133,7 @@ export function BreakdownMatrix({
                 key={v}
                 type="button"
                 onClick={() => setView(v)}
+                aria-pressed={view === v}
                 className={cn("min-h-11 whitespace-nowrap rounded-lg px-3", active)}
               >
                 {v === "grid" ? "Grid" : "One scene"}
@@ -155,6 +156,7 @@ export function BreakdownMatrix({
                 {acts.map((a) => (
                   <th
                     key={a.act}
+                    scope="colgroup"
                     colSpan={a.count}
                     className="border-b border-l border-line bg-surface-2 px-2 py-1 text-xs font-semibold uppercase tracking-wider text-muted"
                   >
@@ -170,6 +172,7 @@ export function BreakdownMatrix({
                 {scenes.map((s, i) => (
                   <th
                     key={s.id}
+                    scope="col"
                     title={`Act ${s.act}, ${s.number}: ${s.name}`}
                     className={cn(
                       "h-28 w-11 min-w-11 border-b border-line px-0 align-bottom font-medium",
@@ -184,7 +187,7 @@ export function BreakdownMatrix({
                     </div>
                   </th>
                 ))}
-                <th className="border-b border-l border-line px-2 text-xs font-semibold text-muted">#</th>
+                <th scope="col" className="border-b border-l border-line px-2 text-xs font-semibold text-muted">#</th>
               </tr>
             </thead>
             <tbody>
@@ -343,7 +346,7 @@ function KindRows({
   return (
     <>
       <tr>
-        <td className="sticky left-0 z-10 border-b border-r border-line bg-surface-2 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        <td className="sticky left-0 z-10 border-b border-r border-line bg-surface-2 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted">
           {label}
         </td>
         <td colSpan={scenes.length + 1} className="border-b border-line bg-surface-2" />
@@ -355,7 +358,7 @@ function KindRows({
             className="sticky left-0 z-10 max-w-36 border-b border-r border-line bg-surface px-3 py-0 text-left font-medium group-hover:bg-surface-2"
           >
             <span className="block truncate">{r.name}</span>
-            {r.castCount === 0 ? <span className="block text-[11px] font-normal text-warn">not cast</span> : null}
+            {r.castCount === 0 ? <span className="block text-xs font-normal text-warn">not cast</span> : null}
           </th>
           {scenes.map((s, i) => {
             const on = cells.has(key(s.id, r.id));

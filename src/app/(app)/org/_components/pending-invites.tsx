@@ -25,7 +25,9 @@ export function PendingInvites({
               <div className="truncate font-medium">{invite.name || invite.email}</div>
               {invite.name ? <div className="truncate text-sm text-muted">{invite.email}</div> : null}
             </div>
-            <span className="text-xs text-muted">Expires {fmtDay(invite.expiresAt, timezone)}</span>
+            <span className="text-xs text-muted">
+              Sent {fmtDay(invite.createdAt, timezone)} · expires {fmtDay(invite.expiresAt, timezone)}
+            </span>
           </div>
           <div className="flex flex-wrap gap-1">
             {grants.map((g) => (

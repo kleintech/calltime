@@ -79,7 +79,7 @@ export function CastForm({
           {roles.map((r) => (
             <label
               key={r.id}
-              className="flex min-h-10 cursor-pointer items-center gap-1.5 rounded-full border border-line px-3 text-sm has-[:checked]:border-success has-[:checked]:bg-success-soft has-[:checked]:text-success"
+              className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border border-line px-3 text-sm has-[:checked]:border-success has-[:checked]:bg-success-soft has-[:checked]:text-success has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
             >
               <input type="checkbox" name="roleIds" value={r.id} defaultChecked={preselect.includes(r.id)} className="sr-only" />
               {r.name}

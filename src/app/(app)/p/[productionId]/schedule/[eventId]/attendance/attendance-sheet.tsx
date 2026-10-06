@@ -213,7 +213,7 @@ export function AttendanceSheet({
                       {p.pickedUpBy ? ` with ${p.pickedUpBy}` : ""}
                       <button
                         type="button"
-                        className="ml-1 inline-flex size-9 items-center justify-center rounded-full hover:bg-surface-2"
+                        className="ml-1 inline-flex size-11 items-center justify-center rounded-full hover:bg-surface-2"
                         aria-label="Undo sign-out"
                         onClick={() => {
                           patch(p.id, { checkedOutAt: null, pickedUpBy: null });
@@ -241,7 +241,7 @@ export function AttendanceSheet({
             </li>
           );
         })}
-        {shown.length === 0 ? <li className="py-8 text-center text-sm text-muted">Nobody here.</li> : null}
+        {shown.length === 0 ? <li className="py-8 text-center text-sm text-muted">No one in this list.</li> : null}
       </ul>
 
       <Sheet
@@ -252,7 +252,7 @@ export function AttendanceSheet({
         footer={
           signingOut ? (
             <Button type="button" className="w-full" disabled={!pickup.trim()} onClick={() => doSignOut(signingOut, pickup.trim())}>
-              Signed out{pickup.trim() ? ` with ${pickup.trim()}` : ""}
+              Sign out{pickup.trim() ? ` with ${pickup.trim()}` : ""}
             </Button>
           ) : null
         }

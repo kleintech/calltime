@@ -9,6 +9,7 @@ import { markRemainingNotCast } from "../../actions";
 import { ConfirmButton } from "../../_components/forms";
 import { BulkInvites, CastForm } from "../../_components/cast-form";
 import { ConflictList, Stars, StatusBadge } from "../../_components/signup-bits";
+import { kindLabel } from "@/app/(app)/productions/_components/constants";
 
 const ORDER = { cast: 0, callback: 1, auditioned: 2, checked_in: 3, not_cast: 4 } as const;
 
@@ -69,7 +70,7 @@ export default async function CastingPage({ params }: PageProps<"/p/[productionI
               <li key={r.id} className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm">
                 <span className="font-medium">{r.name}</span>
                 <span className="text-right text-muted">
-                  {c.length ? c.map((x) => `${x.firstName} ${x.lastName}${x.kind !== "primary" ? ` (${x.kind})` : ""}`).join(", ") : "—"}
+                  {c.length ? c.map((x) => `${x.firstName} ${x.lastName}${x.kind !== "primary" ? ` (${kindLabel(x.kind)})` : ""}`).join(", ") : "—"}
                 </span>
               </li>
             );
@@ -104,7 +105,7 @@ export default async function CastingPage({ params }: PageProps<"/p/[productionI
                       {mine.map((a) => (
                         <Badge key={a.roleId} tone="success">
                           {a.roleName}
-                          {a.kind !== "primary" ? ` · ${a.kind}` : ""}
+                          {a.kind !== "primary" ? ` · ${kindLabel(a.kind)}` : ""}
                         </Badge>
                       ))}
                     </div>

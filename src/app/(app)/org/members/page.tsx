@@ -96,7 +96,13 @@ export default async function MembersPage({ searchParams }: PageProps<"/org/memb
                     <input type="hidden" name="userId" value={m.user.id} />
                     <input type="hidden" name="role" value={m.role === "admin" ? "member" : "admin"} />
                     <SubmitButton
-                      confirm={m.user.id === me.id && m.role === "admin" ? "Remove your own admin access?" : undefined}
+                      confirm={
+                        m.role === "admin"
+                          ? m.user.id === me.id
+                            ? "Remove your own admin access? You keep your account but can no longer manage people, invites or productions."
+                            : `Remove admin access for ${m.user.name}? They keep their account but can no longer manage people, invites or productions.`
+                          : `Make ${m.user.name} an admin? They can manage everyone in ${org.name}, every production, invites and API keys.`
+                      }
                     >
                       {m.role === "admin" ? "Make member" : "Make admin"}
                     </SubmitButton>
@@ -106,7 +112,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/org/memb
                   <form action={removeMember}>
                     <input type="hidden" name="orgId" value={org.id} />
                     <input type="hidden" name="userId" value={m.user.id} />
-                    <SubmitButton variant="danger" confirm={`Remove ${m.user.name} from ${org.name}?`}>
+                    <SubmitButton variant="danger" confirm={`Remove ${m.user.name} from ${org.name}? They lose access to every production here.`}>
                       Remove
                     </SubmitButton>
                   </form>

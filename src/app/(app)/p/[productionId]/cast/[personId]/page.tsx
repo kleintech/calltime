@@ -109,10 +109,15 @@ export default async function PersonPage({ params }: PageProps<"/p/[productionId
                   <Link href={`${base}/roles/${m.roleId}`} className="min-w-0 flex-1 truncate font-medium hover:text-accent">
                     {roleById.get(m.roleId)?.name}
                   </Link>
-                  <AssignmentKindSelect action={setAssignmentKind.bind(null, productionId, m.roleId, personId)} value={m.kind} />
+                  <AssignmentKindSelect
+                    action={setAssignmentKind.bind(null, productionId, m.roleId, personId)}
+                    value={m.kind}
+                    name={name}
+                    roleName={roleById.get(m.roleId)?.name ?? "this role"}
+                  />
                   <ConfirmForm
                     action={removeAssignment.bind(null, productionId, m.roleId, personId)}
-                    confirm={`Remove ${name} from ${roleById.get(m.roleId)?.name}?`}
+                    confirm={`Remove ${name} from ${roleById.get(m.roleId)?.name}? They drop off every upcoming call for that role, and their family is notified.`}
                   >
                     <IconSubmit label="Remove from role">
                       <X className="size-4" />

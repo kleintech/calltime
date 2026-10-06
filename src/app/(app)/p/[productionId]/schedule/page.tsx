@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, gte, inArray, lt, ne } from "drizzle-orm";
-import { CalendarPlus, ChevronRight, CopyPlus, MapPin, Send, TriangleAlert, Users } from "lucide-react";
+import { CalendarPlus, ChevronRight, CopyPlus, MapPin, Plus, Send, TriangleAlert, Users } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
 import { events, people } from "@/db/schema";
@@ -78,6 +78,24 @@ export default async function SchedulePage({ params, searchParams }: PageProps<"
     weeks.set(wk, days);
   }
   const thisWeek = weekKey(now, tz);
+  const nextWeek = new Date(Date.parse(thisWeek) + 7 * 86400_000).toISOString().slice(0, 10);
+  // Editors always see this week and next, so an empty day is itself the "add a rehearsal" button.
+  if (canEdit && !past) for (const wk of [thisWeek, nextWeek]) if (!weeks.has(wk)) weeks.set(wk, new Map());
+  const weekDays = (wk: string) => Array.from({ length: 7 }, (_, i) => new Date(Date.parse(wk) + i * 86400_000).toISOString().slice(0, 10));
+  const dayLabel = (dk: string) => fmtDay(`${dk}T12:00:00Z`, "UTC");
+  // "Publish N drafts" names what it publishes: when, and how many people will see a call.
+  const draftSheets = sheets.filter((s) => s.event.status === "draft");
+  const draftPeople = new Set(draftSheets.flatMap((s) => [...s.calls.keys()])).size;
+  const draftRange =
+    draftSheets.length === 0
+      ? ""
+      : draftSheets.length === 1
+        ? fmtDay(draftSheets[0].event.startsAt, tz)
+        : `${fmtDay(draftSheets[0].event.startsAt, tz)} – ${fmtDay(draftSheets[draftSheets.length - 1].event.startsAt, tz)}`;
+  const publishConfirm =
+    `Publish ${drafts} draft${drafts === 1 ? "" : "s"}${draftRange ? ` (${draftRange})` : ""}? ` +
+    (draftPeople ? `${draftPeople} ${draftPeople === 1 ? "person" : "people"} will see their calls right away, and calendar feeds update automatically.` : "Cast and families will see them right away.") +
+    (drafts > draftSheets.length ? ` This includes ${drafts - draftSheets.length} older draft${drafts - draftSheets.length === 1 ? "" : "s"} not shown here.` : "");
   const firstDraftWeek = canEdit && !past ? visible.find((s) => s.event.status === "draft") : undefined;
   const todayKey = dayKey(now, tz);
   const weekLabel = (wk: string) => {
@@ -128,7 +146,7 @@ export default async function SchedulePage({ params, searchParams }: PageProps<"
             {drafts > 0 ? (
               <ActionButton
                 action={publishAllDrafts.bind(null, productionId)}
-                confirm={`Publish all ${drafts} draft event${drafts === 1 ? "" : "s"}? Cast and families will see them right away.`}
+                confirm={publishConfirm}
                 pendingLabel="Publishing…"
                 className="w-full sm:w-auto"
               >
@@ -159,7 +177,7 @@ export default async function SchedulePage({ params, searchParams }: PageProps<"
         </div>
       ) : null}
 
-      {visible.length === 0 ? (
+      {visible.length === 0 && !(canEdit && !past) ? (
         <EmptyState
           title={past ? "No past events" : mineOnly ? "No upcoming calls" : "Nothing scheduled yet"}
           body={
@@ -185,7 +203,7 @@ export default async function SchedulePage({ params, searchParams }: PageProps<"
                       confirm={`Copy this week's ${weekEvents} event${weekEvents === 1 ? "" : "s"} to the following week as drafts?`}
                       pendingLabel="Copying…"
                       variant="ghost"
-                      className="min-h-9 px-2 text-xs text-muted"
+                      className="text-muted"
                       doneMessage="Copied {count} as drafts"
                     >
                       <CopyPlus className="size-4" /> Copy to next week
@@ -193,13 +211,23 @@ export default async function SchedulePage({ params, searchParams }: PageProps<"
                   ) : null}
                 </div>
                 <div className="space-y-4">
-                  {[...days.entries()].map(([dk, list]) => (
+                  {(canEdit && !past && (wk === thisWeek || wk === nextWeek) ? weekDays(wk).filter((dk) => days.has(dk) || dk >= todayKey) : [...days.keys()]).map((dk) => {
+                    const list = days.get(dk) ?? [];
+                    return (
                     <div key={dk}>
                       <h3 className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
-                        {fmtDay(list[0].event.startsAt, tz)}
+                        {list[0] ? fmtDay(list[0].event.startsAt, tz) : dayLabel(dk)}
                         {dk === todayKey ? <Badge tone="accent">Today</Badge> : null}
                       </h3>
                       <div className="grid gap-2 lg:grid-cols-2">
+                        {list.length === 0 ? (
+                          <Link
+                            href={`${base}/new?date=${dk}`}
+                            className="flex min-h-12 items-center gap-2 rounded-2xl border border-dashed border-line-strong/70 px-4 text-sm font-medium text-muted transition-colors hover:border-accent hover:text-accent"
+                          >
+                            <Plus className="size-4" /> Add rehearsal
+                          </Link>
+                        ) : null}
                         {list.map((s) => {
                           const ev = s.event;
                           const cancelled = ev.status === "cancelled";
@@ -271,7 +299,8 @@ export default async function SchedulePage({ params, searchParams }: PageProps<"
                         })}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             );

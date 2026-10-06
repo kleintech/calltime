@@ -88,7 +88,7 @@ export default async function PeoplePage({ searchParams }: PageProps<"/org/peopl
         <input type="hidden" name="org" value={org.id} />
         {filter !== "all" ? <input type="hidden" name="filter" value={filter} /> : null}
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-        <Input name="q" defaultValue={q} placeholder="Search name, email, phone" className="pl-9" type="search" />
+        <Input name="q" defaultValue={q} placeholder="Search name, email, phone" aria-label="Search people" className="pl-9" type="search" />
       </form>
 
       <div className="-mx-4 mt-3 overflow-x-auto px-4">

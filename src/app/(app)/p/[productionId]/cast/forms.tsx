@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Checkbox, Field, Input, Select, cn } from "@/components/ui";
+import { useState, useTransition } from "react";
+import { Button, Checkbox, Field, Input, Select, cn } from "@/components/ui";
 import { ActionForm, SubmitButton, type FormAction } from "@/app/(app)/productions/_components/form";
 import { ASSIGNMENT_KINDS, ROLE_KINDS } from "@/app/(app)/productions/_components/constants";
 
@@ -189,15 +189,41 @@ export function AssignForm({
   );
 }
 
-/** Change an assignment's kind; submits as soon as it changes. */
-export function AssignmentKindSelect({ action, value }: { action: (fd: FormData) => Promise<void>; value: string }) {
+/**
+ * Change an assignment's kind. Explicit "Change" + confirmation: understudies aren't called by scene
+ * calls, so this changes someone's upcoming calls and notifies their family.
+ */
+export function AssignmentKindSelect({
+  action,
+  value,
+  name,
+  roleName,
+}: {
+  action: (fd: FormData) => Promise<void>;
+  value: string;
+  name: string;
+  roleName: string;
+}) {
+  const [kind, setKind] = useState(value);
+  const [pending, start] = useTransition();
+  const label = ASSIGNMENT_KINDS.find((k) => k.value === kind)?.label ?? kind;
   return (
-    <form action={action}>
+    <form
+      className="flex items-center gap-1.5"
+      action={(fd) => {
+        const msg =
+          kind === "primary"
+            ? `Make ${name} a primary ${roleName}? They'll be called whenever ${roleName}'s scenes rehearse, and their family is notified of any new calls.`
+            : `Make ${name} the ${label.toLowerCase()} for ${roleName}? ${label}s aren't called by scene calls, so their upcoming calls change and their family is notified.`;
+        if (!window.confirm(msg)) return;
+        start(() => action(fd));
+      }}
+    >
       <select
         name="kind"
-        defaultValue={value}
-        aria-label="Assignment type"
-        onChange={(e) => e.currentTarget.form?.requestSubmit()}
+        value={kind}
+        onChange={(e) => setKind(e.target.value)}
+        aria-label={`${roleName}: assignment type`}
         className="min-h-11 rounded-xl border border-line bg-surface px-2 text-base"
       >
         {ASSIGNMENT_KINDS.map((k) => (
@@ -206,6 +232,11 @@ export function AssignmentKindSelect({ action, value }: { action: (fd: FormData)
           </option>
         ))}
       </select>
+      {kind !== value ? (
+        <Button type="submit" size="sm" variant="secondary" disabled={pending}>
+          {pending ? "Saving…" : "Change"}
+        </Button>
+      ) : null}
     </form>
   );
 }

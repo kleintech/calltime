@@ -12,6 +12,7 @@ import { Avatar, BackLink, Badge, Card, Field, Select, SectionTitle, Textarea } 
 import { moveSignup, saveReview } from "../../../actions";
 import { StateForm, SubmitButton } from "../../../_components/forms";
 import { ConflictList, RatingInput, StatusBadge, StatusButtons } from "../../../_components/signup-bits";
+import { kindLabel } from "@/app/(app)/productions/_components/constants";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   if (children == null || children === "") return null;
@@ -73,7 +74,7 @@ export default async function SignupDetail({ params }: PageProps<"/p/[production
             {cast.map((c) => (
               <Badge key={c.roleId} tone="success">
                 {c.roleName}
-                {c.kind !== "primary" ? ` (${c.kind})` : ""}
+                {c.kind !== "primary" ? ` (${kindLabel(c.kind)})` : ""}
               </Badge>
             ))}
           </div>

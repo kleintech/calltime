@@ -74,7 +74,7 @@ export default async function ReportPage({ params }: PageProps<"/p/[productionId
           </p>
           {notPresent.map((a, i) => (
             <p key={i} className="text-muted">
-              {a.firstName} {a.lastName} — {a.status}
+              {a.firstName} {a.lastName} — {a.status.replace(/_/g, " ").replace(/^./, (ch) => ch.toUpperCase())}
               {a.note ? ` (${a.note})` : ""}
             </p>
           ))}

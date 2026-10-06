@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Search, TriangleAlert, Users, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, cn } from "@/components/ui";
 import { callKey, type CallRef, type CallTargetKind, type EditorOptions } from "@/lib/schedule-shared";
 
@@ -39,17 +39,13 @@ export function CallPicker({
   const [tab, setTab] = useState<Tab>("scene");
   const [q, setQ] = useState("");
   const selectedKeys = useMemo(() => new Set(selected.map(callKey)), [selected]);
+  const ref = useRef<HTMLDialogElement>(null);
 
+  // A native modal dialog: focus trap, Escape, inert background and focus return to the trigger for free.
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
 
   const toggle = (c: CallRef) => {
     const k = callKey(c);
@@ -157,13 +153,25 @@ export function CallPicker({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6" role="dialog" aria-modal aria-label={title}>
-      <button type="button" aria-label="Close" className="absolute inset-0 animate-fade-in bg-scrim backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative flex max-h-[88dvh] w-full animate-rise flex-col rounded-t-3xl border border-line/80 bg-surface shadow-overlay sm:max-w-2xl sm:rounded-3xl">
-        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-line-strong sm:hidden" />
+    <dialog
+      ref={ref}
+      aria-labelledby="call-picker-title"
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target !== e.currentTarget) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+        if (!inside) onClose();
+      }}
+      className="ct-sheet flex-col overflow-hidden border border-line/80 bg-surface p-0 text-ink shadow-overlay open:flex sm:max-w-2xl!"
+    >
+      <div className="flex max-h-[inherit] w-full flex-col">
+        <div aria-hidden className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-line-strong sm:hidden" />
         <div className="flex shrink-0 items-center justify-between gap-3 px-5 pb-2 pt-3">
           <div className="min-w-0">
-            <p className="font-display text-xl font-semibold tracking-tight">Who&apos;s called</p>
+            <h2 id="call-picker-title" className="font-display text-xl font-semibold tracking-tight">
+              Who&apos;s called
+            </h2>
             <p className="truncate text-sm text-muted">{title}</p>
           </div>
           <button type="button" onClick={onClose} className="-mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-surface-2 text-muted hover:text-ink" aria-label="Close">
@@ -171,11 +179,24 @@ export function CallPicker({
           </button>
         </div>
         <div className="shrink-0 overflow-x-auto px-4 py-1 scrollbar-none">
-          <div className="flex min-w-max gap-0.5 rounded-full bg-surface-2 p-0.5 ring-1 ring-inset ring-line/60">
+          <div role="tablist" aria-label="Call by" className="flex min-w-max gap-0.5 rounded-full bg-surface-2 p-0.5 ring-1 ring-inset ring-line/60">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                aria-controls="call-picker-panel"
+                tabIndex={tab === t.id ? 0 : -1}
+                onKeyDown={(e) => {
+                  const i = TABS.findIndex((x) => x.id === tab);
+                  const next = e.key === "ArrowRight" ? TABS[(i + 1) % TABS.length] : e.key === "ArrowLeft" ? TABS[(i - 1 + TABS.length) % TABS.length] : null;
+                  if (!next) return;
+                  e.preventDefault();
+                  setTab(next.id);
+                  setQ("");
+                  (e.currentTarget.parentElement?.children[TABS.indexOf(next)] as HTMLElement | undefined)?.focus();
+                }}
                 onClick={() => {
                   setTab(t.id);
                   setQ("");
@@ -195,14 +216,18 @@ export function CallPicker({
           <div className="relative shrink-0 px-4 pt-3">
             <Search className="pointer-events-none absolute left-7 top-1/2 mt-1.5 size-4 -translate-y-1/2 text-muted" />
             <input
+              type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              aria-label={`Search ${TABS.find((t) => t.id === tab)!.label.toLowerCase()}`}
               placeholder={`Search ${TABS.find((t) => t.id === tab)!.label.toLowerCase()}`}
-              className="min-h-11 w-full rounded-xl border border-control bg-surface pl-9 pr-3 text-base text-ink placeholder:text-muted/80 focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15"
+              className="min-h-11 w-full rounded-xl border border-control bg-surface pl-9 pr-3 text-base text-ink placeholder:text-muted/80 focus:border-accent focus-visible:ring-4 focus-visible:ring-accent/15"
             />
           </div>
         ) : null}
-        <div className="min-h-48 flex-1 overflow-y-auto overscroll-contain px-4 py-4">{body}</div>
+        <div id="call-picker-panel" role="tabpanel" className="min-h-48 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+          {body}
+        </div>
         <div className="flex shrink-0 items-center gap-3 border-t border-line px-4 py-3 pb-[max(env(safe-area-inset-bottom),12px)]">
           <p className="min-w-0 flex-1 text-sm text-muted">
             <span className="font-semibold text-ink">{people.size}</span> {people.size === 1 ? "person" : "people"} called
@@ -218,6 +243,6 @@ export function CallPicker({
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

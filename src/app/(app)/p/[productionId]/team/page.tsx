@@ -83,10 +83,10 @@ export default async function TeamPage({ params }: PageProps<"/p/[productionId]/
                   confirm={
                     u.id === user.id
                       ? "Remove yourself from this creative team? You may lose access to this production."
-                      : `Remove ${u.name} from the creative team?`
+                      : `Remove ${u.name} from the creative team? They lose access to edit this production.`
                   }
                 >
-                  <button type="submit" className="text-sm font-medium text-danger hover:underline">
+                  <button type="submit" className="inline-flex min-h-11 items-center rounded-full px-3 text-sm font-medium text-danger hover:bg-danger-soft">
                     Remove from team
                   </button>
                 </ConfirmForm>

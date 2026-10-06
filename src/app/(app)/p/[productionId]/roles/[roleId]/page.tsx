@@ -11,7 +11,7 @@ import { requireProductionEditor } from "@/lib/access";
 import { sceneLabel } from "@/lib/calls";
 import { isUuid, personName } from "@/lib/production-queries";
 import { ConfirmForm, SubmitButton } from "@/app/(app)/productions/_components/form";
-import { ROLE_KIND_SINGULAR } from "@/app/(app)/productions/_components/constants";
+import { ROLE_KIND_SINGULAR, kindLabel } from "@/app/(app)/productions/_components/constants";
 import { deleteRole, updateRole } from "../actions";
 import { RoleForm } from "../forms";
 
@@ -58,7 +58,7 @@ export default async function RolePage({ params }: PageProps<"/p/[productionId]/
               key={person.id}
               href={`${base}/cast/${person.id}`}
               title={personName(person)}
-              right={<Badge tone={kind === "primary" ? "neutral" : "gold"}>{kind}</Badge>}
+              right={<Badge tone={kind === "primary" ? "neutral" : "gold"}>{kindLabel(kind)}</Badge>}
             />
           ))}
         </List>
