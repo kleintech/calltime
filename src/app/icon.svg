@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <clipPath id="r"><rect width="512" height="512" rx="114"/></clipPath>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#3b0f86"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#000" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="spot" cx=".5" cy="-.05" r=".75">
+      <stop offset="0" stop-color="#ffd58a" stop-opacity=".55"/>
+      <stop offset=".55" stop-color="#ffd58a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#r)">
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g opacity=".7">
+    <rect x="0" width="64" height="512" fill="url(#fold)"/>
+    <rect x="64" width="64" height="512" fill="url(#fold)"/>
+    <rect x="128" width="64" height="512" fill="url(#fold)"/>
+    <rect x="192" width="64" height="512" fill="url(#fold)"/>
+    <rect x="256" width="64" height="512" fill="url(#fold)"/>
+    <rect x="320" width="64" height="512" fill="url(#fold)"/>
+    <rect x="384" width="64" height="512" fill="url(#fold)"/>
+    <rect x="448" width="64" height="512" fill="url(#fold)"/>
+  </g>
+  <rect width="512" height="512" fill="url(#spot)"/>
+  <g transform="translate(256 268)">
+    <path d="M86 -74 A114 114 0 1 0 86 74" fill="none" stroke="#fff" stroke-width="40" stroke-linecap="round"/>
+    <path d="M0 -62 V0 L40 26" fill="none" stroke="#f2b859" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="124" cy="0" r="21" fill="#f2b859"/>
+  </g>
+  </g>
+</svg>

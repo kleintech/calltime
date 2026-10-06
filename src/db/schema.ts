@@ -318,6 +318,10 @@ export const events = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     /** Bumped on every material change after publish; drives "Updated" badges and ICS SEQUENCE. */
     revision: integer("revision").notNull().default(0),
+    /** What changed, in the creative team's words ("Moved to 6:30"), shown to families with the Updated badge. */
+    changeNote: text("change_note"),
+    /** When the last material change (revision bump) or cancellation happened. */
+    changedAt: timestamp("changed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -473,6 +477,15 @@ export const auditionSignups = pgTable(
     /** Lets the auditioner view/manage their signup without an account: /audition/<slug>/me/<token> */
     manageToken: text("manage_token").notNull().unique(),
     createdAt: createdAt(),
+    /**
+     * Structured conflicts given at signup, as org-local wall-clock values:
+     * [{ date: "2026-10-21", allDay, start?: "15:00", end?: "17:00", weekly?, note? }].
+     * Copied into `conflicts` (with productionId) when the signup is cast.
+     */
+    conflictDates: jsonb("conflict_dates")
+      .$type<{ date: string; allDay: boolean; start?: string; end?: string; weekly?: boolean; note?: string }[]>()
+      .notNull()
+      .default([]),
   },
   (t) => [index("audition_signups_audition_idx").on(t.auditionId)],
 );
@@ -594,3 +607,124 @@ export const auditionSignupsRelations = relations(auditionSignups, ({ one }) => 
 export const announcementsRelations = relations(announcements, ({ one }) => ({
   production: one(productions, { fields: [announcements.productionId], references: [productions.id] }),
 }));
+
+/* ───────────────────────── Resources ───────────────────────── */
+
+/**
+ * Links (no uploads) to rehearsal materials: script pages, vocal tracks, choreo videos, docs.
+ * Optionally attached to a scene and/or a role; with neither, it's production-wide.
+ * kind: "script" | "track" | "video" | "doc" | "link".
+ */
+export const resources = pgTable(
+  "resources",
+  {
+    id: id(),
+    productionId: uuid("production_id")
+      .notNull()
+      .references(() => productions.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    kind: text("kind").notNull().default("link"),
+    sceneId: uuid("scene_id").references(() => scenes.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id").references(() => roles.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("resources_production_idx").on(t.productionId)],
+);
+
+/* ───────────────────────── Volunteers ───────────────────────── */
+
+/**
+ * A parent/crew volunteer job for a production: "Concessions — Opening Night", "Costume crew",
+ * "Snack table". startsAt/endsAt are null for ongoing roles (crew that works across the run).
+ */
+export const volunteerShifts = pgTable(
+  "volunteer_shifts",
+  {
+    id: id(),
+    productionId: uuid("production_id")
+      .notNull()
+      .references(() => productions.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    location: text("location"),
+    capacity: integer("capacity").notNull().default(1),
+    /** Volunteer-hour credit, in minutes. Null = use the shift's duration (0 for ongoing roles). */
+    creditMinutes: integer("credit_minutes"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("volunteer_shifts_production_idx").on(t.productionId)],
+);
+
+/** One account signed up for one shift (a family; personId optionally says on whose behalf). */
+export const volunteerSignups = pgTable(
+  "volunteer_signups",
+  {
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => volunteerShifts.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    personId: uuid("person_id").references(() => people.id, { onDelete: "set null" }),
+    note: text("note"),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.shiftId, t.userId] }), index("volunteer_signups_user_idx").on(t.userId)],
+);
+
+/** Per-production volunteer settings (row is optional). */
+export const volunteerSettings = pgTable("volunteer_settings", {
+  productionId: uuid("production_id")
+    .primaryKey()
+    .references(() => productions.id, { onDelete: "cascade" }),
+  /** Hours each family is asked to volunteer for this production. Null = no requirement. */
+  requiredHours: integer("required_hours"),
+});
+
+/* ───────────────────────── Change log ───────────────────────── */
+
+/**
+ * One row per material change to an already-published event (one per revision bump).
+ * `summary` is human-readable ("Start moved 6:00 → 5:30 PM; Act 2 Sc 3 added") for badges and digests.
+ */
+export const eventChanges = pgTable(
+  "event_changes",
+  {
+    id: id(),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    productionId: uuid("production_id")
+      .notNull()
+      .references(() => productions.id, { onDelete: "cascade" }),
+    /** The event's revision after this change. */
+    revision: integer("revision").notNull(),
+    summary: text("summary").notNull(),
+    changedByUserId: uuid("changed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("event_changes_event_idx").on(t.eventId, t.revision),
+    index("event_changes_production_idx").on(t.productionId, t.createdAt),
+  ],
+);
+
+/** "Got it": the highest revision of an event this account has acknowledged. */
+export const changeAcks = pgTable(
+  "change_acks",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    ackedAt: timestamp("acked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId] }), index("change_acks_event_idx").on(t.eventId)],
+);
