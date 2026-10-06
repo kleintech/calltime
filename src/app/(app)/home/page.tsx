@@ -263,27 +263,36 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
       ) : null}
 
       {castProdIds.length > 0 ? (
-        <nav className="mt-3 space-y-2" aria-label="Show resources">
+        <nav className="mt-3 space-y-3" aria-label="Show resources">
           {castProdIds.map((id) => {
             const n = unreadNotes.get(id) ?? 0;
-            const pill =
-              "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 text-sm text-ink hover:bg-surface-2 [&_svg]:size-4 [&_svg]:text-muted";
+            const prod = prodById.get(id);
+            const tile =
+              "relative flex min-h-[4.5rem] flex-col items-center justify-center gap-1 rounded-2xl border border-line/80 bg-surface px-2 py-2.5 text-center text-sm font-medium text-ink shadow-card transition-[box-shadow,transform] duration-200 hover:shadow-raised active:scale-[.98] [&_svg]:size-5 [&_svg]:text-muted";
             return (
-              <div key={id} className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
+              <div key={id}>
                 {castProdIds.length > 1 ? (
-                  <span className="shrink-0 text-xs font-medium text-muted">{prodById.get(id)?.title}</span>
+                  <p className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[.08em] text-muted">
+                    {prod?.accentColor ? <span aria-hidden className="size-2 rounded-full" style={{ background: prod.accentColor }} /> : null}
+                    {prod?.title}
+                  </p>
                 ) : null}
-                {n > 0 ? (
-                  <Link href={`/p/${id}/notes`} className={cn(pill, "border-accent/40 bg-accent-soft font-medium text-accent [&_svg]:text-accent")}>
-                    <NotebookPen /> {n} new {n === 1 ? "note" : "notes"}
+                <div className="grid grid-cols-3 gap-2">
+                  <Link
+                    href={`/p/${id}/notes`}
+                    className={cn(tile, n > 0 && "border-accent/40 bg-accent-soft text-accent [&_svg]:text-accent")}
+                  >
+                    <NotebookPen />
+                    {n > 0 ? `${n} new ${n === 1 ? "note" : "notes"}` : "Notes"}
+                    {n > 0 ? <span aria-hidden className="absolute right-2.5 top-2.5 size-2 rounded-full bg-accent" /> : null}
                   </Link>
-                ) : null}
-                <Link href={`/p/${id}/resources`} className={pill}>
-                  <FolderOpen /> Materials
-                </Link>
-                <Link href={`/p/${id}/volunteers`} className={pill}>
-                  <HandHeart /> Volunteer
-                </Link>
+                  <Link href={`/p/${id}/resources`} className={tile}>
+                    <FolderOpen /> Materials
+                  </Link>
+                  <Link href={`/p/${id}/volunteers`} className={tile}>
+                    <HandHeart /> Volunteer
+                  </Link>
+                </div>
               </div>
             );
           })}
@@ -292,19 +301,23 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
 
       {annRows.length > 0 ? (
         <section className="mt-6">
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted">
+          <h2 className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[.08em] text-muted">
             <Megaphone className="size-4" /> From the team
           </h2>
           <div className="space-y-2">
             {annRows.map((a) => {
               const isNew = now.getTime() - a.createdAt.getTime() < 48 * 3600_000;
               return (
-                <Link key={a.id} href={`/p/${a.productionId}`} className="block rounded-2xl border border-line bg-surface p-3.5 hover:bg-surface-2">
+                <Link
+                  key={a.id}
+                  href={`/p/${a.productionId}`}
+                  className="block rounded-2xl border border-line/80 bg-surface p-4 shadow-card transition-[box-shadow,transform] duration-200 hover:shadow-raised active:scale-[.99]"
+                >
                   <p className="flex flex-wrap items-center gap-2 font-medium">
                     {a.title}
                     {isNew ? <Badge tone="accent">New</Badge> : a.pinned ? <Badge>Pinned</Badge> : null}
                   </p>
-                  <p className="line-clamp-2 text-sm text-muted">{a.body}</p>
+                  <p className="mt-0.5 line-clamp-2 text-[15px] text-muted">{a.body}</p>
                   {castProdIds.length > 1 ? <p className="mt-1 text-xs text-muted">{prodById.get(a.productionId)?.title}</p> : null}
                 </Link>
               );

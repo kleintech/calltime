@@ -410,7 +410,7 @@ export function TimePill({
   return (
     <span
       className={cn(
-        "tabular inline-flex items-center gap-1.5 rounded-full font-semibold whitespace-nowrap [&_svg]:size-[1em]",
+        "tabular inline-flex h-fit items-center gap-1.5 rounded-full font-semibold whitespace-nowrap [&_svg]:size-[1em]",
         size === "sm" && "px-2 py-0.5 text-xs",
         size === "md" && "px-2.5 py-1 text-sm",
         size === "lg" && "px-3.5 py-1.5 text-base",

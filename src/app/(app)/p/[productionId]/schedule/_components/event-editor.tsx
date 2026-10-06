@@ -3,7 +3,7 @@
 import { ArrowDown, ArrowUp, ChevronDown, Plus, TriangleAlert, Trash, UserPlus, Users, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
-import { Avatar, Button, Field, Input, Notice, Textarea, cn } from "@/components/ui";
+import { Avatar, Button, cn, Field, Input, Notice, Textarea, TimePill } from "@/components/ui";
 import {
   EVENT_KINDS,
   KIND_META,
@@ -248,12 +248,12 @@ export function EventEditor({
           const pv = preview.perBlock[i];
           const isOpen = expanded[b.key];
           return (
-            <div key={b.key} className="rounded-2xl border border-line bg-surface p-3.5 sm:p-4">
+            <div key={b.key} className="rounded-2xl border border-line/80 bg-surface p-4 shadow-card">
               <div className="flex items-center gap-2">
-                <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold text-muted">
+                <span className="tabular inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-bold text-accent">
                   {i + 1}
                 </span>
-                <span className="min-w-0 flex-1 text-sm font-semibold">Block {i + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{b.title || `Block ${i + 1}`}</span>
                 <div className="flex shrink-0">
                   <button type="button" className="inline-flex size-11 items-center justify-center rounded-lg text-muted hover:bg-surface-2 disabled:opacity-30" disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Move block ${i + 1} up`}>
                     <ArrowUp className="size-4" />
@@ -289,8 +289,8 @@ export function EventEditor({
                       onClick={() => patchBlock(b.key, { end })}
                       aria-pressed={b.end === end}
                       className={cn(
-                        "min-h-9 rounded-full border px-3 text-xs font-medium",
-                        b.end === end ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:text-ink",
+                        "min-h-10 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+                        b.end === end ? "border-accent bg-accent-soft text-accent" : "border-line-strong/70 bg-surface text-muted hover:text-ink",
                       )}
                     >
                       {m < 60 ? `${m}m` : `${m / 60}h`}
@@ -310,18 +310,18 @@ export function EventEditor({
                   <Textarea value={b.notes} onChange={(e) => patchBlock(b.key, { notes: e.target.value })} placeholder="Notes for this block" aria-label="Block notes" className="min-h-16" maxLength={2000} />
                 </div>
               ) : (
-                <button type="button" className="mt-1 min-h-9 text-xs font-medium text-muted hover:text-ink" onClick={() => patchBlock(b.key, { more: true })}>
+                <button type="button" className="mt-1 min-h-10 text-sm font-medium text-muted hover:text-ink" onClick={() => patchBlock(b.key, { more: true })}>
                   + Room / notes
                 </button>
               )}
 
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {b.calls.map((c) => (
-                  <span key={callKey(c)} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-accent-soft pl-3 pr-1 text-sm font-medium text-accent">
+                  <span key={callKey(c)} className="inline-flex min-h-9 items-center gap-1 rounded-full bg-accent-soft pl-3.5 pr-1 text-sm font-semibold text-accent">
                     {options.labels[callKey(c)] ?? "Unknown"}
                     <button
                       type="button"
-                      className="inline-flex size-6 items-center justify-center rounded-full hover:bg-accent/15"
+                      className="inline-flex size-7 items-center justify-center rounded-full hover:bg-accent/15"
                       onClick={() => patchBlock(b.key, { calls: b.calls.filter((x) => callKey(x) !== callKey(c)) })}
                       aria-label="Remove"
                     >
@@ -332,7 +332,7 @@ export function EventEditor({
                 <button
                   type="button"
                   onClick={() => setPickerFor(b.key)}
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-accent/60 px-3 text-sm font-semibold text-accent hover:bg-accent-soft"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-dashed border-accent/60 px-3.5 text-sm font-semibold text-accent transition-colors hover:bg-accent-soft"
                 >
                   <UserPlus className="size-4" /> {b.calls.length ? "Edit calls" : "Call scenes / people"}
                 </button>
@@ -387,7 +387,7 @@ export function EventEditor({
       </datalist>
 
       {/* ── Event-wide preview ── */}
-      <details className="group mt-8 rounded-2xl border border-line bg-surface" open={preview.list.length > 0 && preview.list.length <= 12}>
+      <details className="group mt-8 overflow-hidden rounded-2xl border border-line/80 bg-surface shadow-card" open={preview.list.length > 0 && preview.list.length <= 12}>
         <summary className="flex min-h-14 cursor-pointer list-none items-center gap-2 px-4">
           <Users className="size-5 text-accent" />
           <span className="font-semibold">Who&apos;s called</span>
@@ -409,7 +409,7 @@ export function EventEditor({
               const e = instant(c.end);
               return (
                 <li key={c.personId} className="flex items-center gap-3 px-4 py-2.5">
-                  <Avatar name={p?.name ?? "?"} className="size-8" />
+                  <Avatar name={p?.name ?? "?"} size="sm" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
                       {p?.name ?? "Unknown"}
@@ -417,7 +417,7 @@ export function EventEditor({
                     </p>
                     <p className="truncate text-xs text-muted">{c.reasons.join(", ")}</p>
                   </div>
-                  <span className="shrink-0 text-sm tabular-nums">{s && e ? fmtRange(s, e, tz) : `${c.start}–${c.end}`}</span>
+                  <TimePill size="sm" tone={c.conflict ? "warn" : "neutral"} className="shrink-0">{s && e ? fmtRange(s, e, tz) : `${c.start}–${c.end}`}</TimePill>
                 </li>
               );
             })}

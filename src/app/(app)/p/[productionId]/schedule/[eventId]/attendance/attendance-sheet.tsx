@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { SegmentedControl } from "@/components/segmented-control";
 import { Sheet } from "@/components/sheet";
 import { toast } from "@/components/toast";
-import { Avatar, Badge, Button, Input, cn } from "@/components/ui";
+import { Avatar, Badge, Button, cn, Input, TimePill } from "@/components/ui";
 import { fmtRange, fmtTime } from "@/lib/time";
 import { markAttendance, signOut } from "./actions";
 
@@ -26,9 +26,9 @@ export type AttendancePerson = {
 };
 
 const BUTTONS: { status: Status; label: string; on: string }[] = [
-  { status: "present", label: "Here", on: "border-success bg-success text-white" },
-  { status: "late", label: "Late", on: "border-warn bg-warn text-white" },
-  { status: "absent", label: "Absent", on: "border-danger bg-danger text-white" },
+  { status: "present", label: "Here", on: "border-success bg-success text-surface" },
+  { status: "late", label: "Late", on: "border-warn bg-warn text-surface" },
+  { status: "absent", label: "Absent", on: "border-danger bg-danger text-surface" },
 ];
 
 export function AttendanceSheet({
@@ -118,9 +118,9 @@ export function AttendanceSheet({
           ["Excused", counts.excused, "text-muted"],
           ["Not yet", counts.none, "text-ink"],
         ].map(([label, n, tone]) => (
-          <div key={label as string} className="rounded-xl bg-surface-2 px-1 py-2">
-            <p className={cn("text-lg font-semibold tabular-nums", tone as string)}>{n}</p>
-            <p className="text-[11px] text-muted">{label}</p>
+          <div key={label as string} className="rounded-2xl border border-line/80 bg-surface px-1 py-2.5 shadow-xs">
+            <p className={cn("tabular font-display text-2xl font-semibold leading-7", tone as string)}>{n}</p>
+            <p className="text-[12px] font-medium text-muted">{label}</p>
           </div>
         ))}
       </div>
@@ -155,20 +155,22 @@ export function AttendanceSheet({
             <li
               key={p.id}
               className={cn(
-                "rounded-2xl border bg-surface p-3",
-                late ? "border-warn/60 bg-warn-soft/40" : "border-line",
+                "rounded-2xl border bg-surface p-3.5 shadow-card",
+                late ? "border-warn/60 bg-warn-soft/40" : "border-line/80",
                 p.status === "excused" && "opacity-75",
               )}
             >
               <div className="flex items-center gap-3">
-                <Avatar name={p.name} className="size-9" />
+                <Avatar name={p.name} size="md" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">
                     {p.name} {p.isMinor ? <span className="text-xs font-normal text-muted">· minor</span> : null}
                   </p>
-                  <p className="flex items-center gap-1 text-xs text-muted">
-                    <Clock className="size-3" /> {fmtRange(p.callAt, p.releaseAt, tz)}
-                    {late ? <span className="font-semibold text-warn"> · call passed</span> : null}
+                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    <TimePill size="sm" tone={late ? "warn" : "neutral"}>
+                      <Clock aria-hidden /> {fmtRange(p.callAt, p.releaseAt, tz)}
+                    </TimePill>
+                    {late ? <span className="text-xs font-semibold text-warn">Call passed</span> : null}
                   </p>
                 </div>
                 {p.status === "excused" ? (
@@ -186,8 +188,8 @@ export function AttendanceSheet({
                       aria-pressed={on}
                       onClick={() => mark(p, b.status)}
                       className={cn(
-                        "inline-flex min-h-11 items-center justify-center gap-1 rounded-xl border text-sm font-semibold transition active:scale-[.97]",
-                        on ? b.on : "border-line bg-surface text-ink hover:bg-surface-2",
+                        "inline-flex min-h-12 items-center justify-center gap-1 rounded-xl border text-[15px] font-semibold transition active:scale-[.96]",
+                        on ? b.on : "border-line-strong/70 bg-surface text-ink hover:bg-surface-2",
                       )}
                     >
                       {on ? <Check className="size-4" /> : null}
@@ -205,7 +207,7 @@ export function AttendanceSheet({
                       {p.pickedUpBy ? ` with ${p.pickedUpBy}` : ""}
                       <button
                         type="button"
-                        className="ml-1 inline-flex size-7 items-center justify-center rounded-full hover:bg-surface-2"
+                        className="ml-1 inline-flex size-9 items-center justify-center rounded-full hover:bg-surface-2"
                         aria-label="Undo sign-out"
                         onClick={() => {
                           patch(p.id, { checkedOutAt: null, pickedUpBy: null });
@@ -223,7 +225,7 @@ export function AttendanceSheet({
                         setPickup("");
                         setSigningOut(p);
                       }}
-                      className="ml-auto inline-flex min-h-9 items-center gap-1 rounded-lg px-2 font-medium text-accent hover:bg-accent-soft"
+                      className="ml-auto inline-flex min-h-10 items-center gap-1 rounded-full px-3 text-sm font-semibold text-accent hover:bg-accent-soft"
                     >
                       <LogOut className="size-3.5" /> Sign out
                     </button>

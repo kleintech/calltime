@@ -1,9 +1,11 @@
 "use client";
 
-import { Check, Search, TriangleAlert, X } from "lucide-react";
+import { Check, Search, TriangleAlert, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, cn } from "@/components/ui";
 import { callKey, type CallRef, type CallTargetKind, type EditorOptions } from "@/lib/schedule-shared";
+
+const LIST = "divide-y divide-line overflow-hidden rounded-2xl border border-line/80 bg-surface shadow-card";
 
 type Tab = "scene" | "group" | "role" | "person" | "all_cast";
 const TABS: { id: Tab; label: string }[] = [
@@ -73,23 +75,34 @@ export function CallPicker({
         aria-pressed={on}
         onClick={() => toggle({ target, targetId: id })}
         className={cn(
-          "inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border px-3.5 text-left text-sm transition active:scale-[.98]",
-          on ? "border-accent bg-accent text-accent-ink" : "border-line bg-surface hover:bg-surface-2",
+          "flex min-h-12 w-full items-center gap-3 px-3.5 py-2 text-left transition-colors",
+          on ? "bg-accent-soft" : "hover:bg-surface-2/70 active:bg-surface-2",
         )}
       >
-        {on ? <Check className="size-4 shrink-0" /> : null}
-        <span className="min-w-0 truncate">
-          <span className="font-medium">{label}</span>
-          {sub ? <span className={cn("ml-1", on ? "opacity-80" : "text-muted")}>{sub}</span> : null}
+        <span
+          aria-hidden
+          className={cn(
+            "inline-flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors",
+            on ? "border-accent bg-accent text-accent-ink" : "border-control bg-surface",
+          )}
+        >
+          {on ? <Check className="size-3.5" strokeWidth={3} /> : null}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[15px]">
+          <span className={cn("font-semibold", on && "text-accent")}>{label}</span>
+          {sub ? <span className="text-muted"> {sub}</span> : null}
         </span>
         {clash ? (
-          <span className={cn("inline-flex shrink-0 items-center gap-0.5 text-xs", on ? "" : "text-warn")} title={`${clash} unavailable`}>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-semibold text-warn" title={`${clash} unavailable`}>
             <TriangleAlert className="size-3.5" aria-label={`${clash} with a conflict`} />
             {target !== "person" ? clash : null}
           </span>
         ) : null}
         {target !== "person" ? (
-          <span className={cn("shrink-0 rounded-full px-1.5 text-xs tabular-nums", on ? "bg-white/20" : "bg-surface-2 text-muted")}>{n}</span>
+          <span className="tabular inline-flex shrink-0 items-center gap-1 text-sm text-muted">
+            <Users className="size-3.5" aria-hidden />
+            {n}
+          </span>
         ) : null}
       </button>
     );
@@ -110,9 +123,9 @@ export function CallPicker({
             if (!list.length) return null;
             return (
               <div key={act} className="mb-4">
-                {act === acts[0] ? <p className="mb-3 text-xs text-muted">Scenes call the primary cast and swings. To include understudies, call the role.</p> : null}
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Act {act}</p>
-                <div className="flex flex-wrap gap-2">
+                {act === acts[0] ? <p className="mb-3 text-sm text-muted">Scenes call the primary cast and swings. To include understudies, call the role.</p> : null}
+                <p className="mb-2 text-[13px] font-semibold uppercase tracking-[.08em] text-muted">Act {act}</p>
+                <div className={LIST}>
                   {list.map((s) => chip("scene", s.id, s.short.replace(/^Act \d+ /, ""), s.name))}
                 </div>
               </div>
@@ -120,24 +133,24 @@ export function CallPicker({
           });
   } else if (tab === "group") {
     const list = options.groups.filter((g) => match(g.name));
-    body = list.length ? <div className="flex flex-wrap gap-2">{list.map((g) => chip("group", g.id, g.name))}</div> : empty(options.groups.length ? "No matching groups" : "No groups yet. Groups bundle roles, like “Pirates” or “Daughters”.");
+    body = list.length ? <div className={LIST}>{list.map((g) => chip("group", g.id, g.name))}</div> : empty(options.groups.length ? "No matching groups" : "No groups yet. Groups bundle roles, like “Pirates” or “Daughters”.");
   } else if (tab === "role") {
     const list = options.roles.filter((r) => match(r.name));
     body = list.length ? (
       <>
-        <p className="mb-3 text-xs text-muted">Calling a role includes its understudies.</p>
-        <div className="flex flex-wrap gap-2">{list.map((r) => chip("role", r.id, r.name))}</div>
+        <p className="mb-3 text-sm text-muted">Calling a role includes its understudies.</p>
+        <div className={LIST}>{list.map((r) => chip("role", r.id, r.name))}</div>
       </>
     ) : (
       empty("No matching roles")
     );
   } else if (tab === "person") {
     const list = options.people.filter((p) => match(p.name));
-    body = list.length ? <div className="flex flex-wrap gap-2">{list.map((p) => chip("person", p.id, p.name))}</div> : empty(options.people.length ? "No one matches" : "No one is cast yet.");
+    body = list.length ? <div className={LIST}>{list.map((p) => chip("person", p.id, p.name))}</div> : empty(options.people.length ? "No one matches" : "No one is cast yet.");
   } else {
     body = (
       <div className="space-y-3">
-        {chip("all_cast", null, "Full cast")}
+        <div className={LIST}>{chip("all_cast", null, "Full cast")}</div>
         <p className="text-sm text-muted">Everyone with a role in this production ({options.people.length} people).</p>
       </div>
     );
@@ -145,20 +158,20 @@ export function CallPicker({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6" role="dialog" aria-modal aria-label={title}>
-      <button type="button" aria-label="Close" className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative flex max-h-[88dvh] w-full flex-col rounded-t-3xl bg-bg shadow-2xl sm:max-w-2xl sm:rounded-3xl">
-        <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-line sm:hidden" />
-        <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-3">
+      <button type="button" aria-label="Close" className="absolute inset-0 animate-fade-in bg-scrim backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative flex max-h-[88dvh] w-full animate-rise flex-col rounded-t-3xl border border-line/80 bg-surface shadow-overlay sm:max-w-2xl sm:rounded-3xl">
+        <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-line-strong sm:hidden" />
+        <div className="flex shrink-0 items-center justify-between gap-3 px-5 pb-2 pt-3">
           <div className="min-w-0">
-            <p className="font-display text-lg font-semibold">Who&apos;s called</p>
-            <p className="truncate text-xs text-muted">{title}</p>
+            <p className="font-display text-xl font-semibold tracking-tight">Who&apos;s called</p>
+            <p className="truncate text-sm text-muted">{title}</p>
           </div>
-          <button type="button" onClick={onClose} className="inline-flex size-11 items-center justify-center rounded-full hover:bg-surface-2" aria-label="Close">
+          <button type="button" onClick={onClose} className="-mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-surface-2 text-muted hover:text-ink" aria-label="Close">
             <X className="size-5" />
           </button>
         </div>
-        <div className="overflow-x-auto px-4 [scrollbar-width:none]">
-          <div className="flex gap-1 rounded-xl bg-surface-2 p-1">
+        <div className="shrink-0 overflow-x-auto px-4 py-1 scrollbar-none">
+          <div className="flex min-w-max gap-0.5 rounded-full bg-surface-2 p-0.5 ring-1 ring-inset ring-line/60">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -168,29 +181,29 @@ export function CallPicker({
                   setQ("");
                 }}
                 className={cn(
-                  "flex min-h-9 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium",
-                  tab === t.id ? "bg-surface text-ink shadow-sm" : "text-muted",
+                  "flex min-h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 text-sm font-semibold transition-colors",
+                  tab === t.id ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
                 )}
               >
                 {t.label}
-                {selCount(t.id) ? <span className="rounded-full bg-accent px-1.5 text-[11px] text-accent-ink">{selCount(t.id)}</span> : null}
+                {selCount(t.id) ? <span className="tabular rounded-full bg-accent px-1.5 text-[12px] leading-5 text-accent-ink">{selCount(t.id)}</span> : null}
               </button>
             ))}
           </div>
         </div>
         {tab !== "all_cast" ? (
-          <div className="relative px-4 pt-3">
+          <div className="relative shrink-0 px-4 pt-3">
             <Search className="pointer-events-none absolute left-7 top-1/2 mt-1.5 size-4 -translate-y-1/2 text-muted" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={`Search ${TABS.find((t) => t.id === tab)!.label.toLowerCase()}`}
-              className="min-h-11 w-full rounded-xl border border-line bg-surface pl-9 pr-3 text-ink placeholder:text-muted/70 focus:outline-2 focus:outline-accent"
+              className="min-h-11 w-full rounded-xl border border-control bg-surface pl-9 pr-3 text-base text-ink placeholder:text-muted/80 focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15"
             />
           </div>
         ) : null}
         <div className="min-h-48 flex-1 overflow-y-auto overscroll-contain px-4 py-4">{body}</div>
-        <div className="flex items-center gap-3 border-t border-line px-4 py-3 pb-[max(env(safe-area-inset-bottom),12px)]">
+        <div className="flex shrink-0 items-center gap-3 border-t border-line px-4 py-3 pb-[max(env(safe-area-inset-bottom),12px)]">
           <p className="min-w-0 flex-1 text-sm text-muted">
             <span className="font-semibold text-ink">{people.size}</span> {people.size === 1 ? "person" : "people"} called
             {selected.length ? ` · ${selected.length} selected` : ""}

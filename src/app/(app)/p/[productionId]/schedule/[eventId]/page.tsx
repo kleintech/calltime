@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { people } from "@/db/schema";
-import { Avatar, BackLink, Badge, Card, LinkButton, Notice, SectionTitle, buttonClass, cn } from "@/components/ui";
+import { Avatar, BackLink, Badge, buttonClass, CallTime, Card, cn, LinkButton, Notice, SectionTitle, TimePill } from "@/components/ui";
 import { getCoveredPersonIds, requireProductionAccess } from "@/lib/access";
 import { getEventCallSheet } from "@/lib/calls";
 import { getAckStatus, getUnacknowledgedChanges } from "@/lib/changes";
@@ -317,13 +317,14 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
                   )}
                 </div>
                 {c ? (
-                  <div className={cn("text-right", cancelled && "line-through opacity-60")}>
-                    <p className="text-xs uppercase tracking-wider text-muted">Called</p>
-                    <p className="font-display text-lg font-semibold tabular-nums">{fmtRange(c.callAt, c.releaseAt, tz)}</p>
+                  <div className="text-right">
+                    <CallTime size="md" strike={cancelled}>
+                      {fmtRange(c.callAt, c.releaseAt, tz)}
+                    </CallTime>
                     {!cancelled && c.releaseAt > now ? (
                       <Link
                         href={`/home/conflicts?${new URLSearchParams({ person: p.id, date: toDateInput(c.callAt, tz), start: toTimeInput(c.callAt, tz), end: toTimeInput(c.releaseAt, tz) })}`}
-                        className="no-print inline-flex min-h-9 items-center text-xs font-medium text-accent"
+                        className="no-print -my-1 inline-flex min-h-11 items-center text-sm font-semibold text-accent"
                       >
                         Can&apos;t make it?
                       </Link>
@@ -366,11 +367,11 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
             return (
               <li
                 key={b.id}
-                className={cn("print-break rounded-2xl border bg-surface p-3.5", mine.length ? "border-accent/50" : "border-line", dim && "opacity-60")}
+                className={cn("print-break rounded-2xl border bg-surface p-4 shadow-card", mine.length ? "border-accent/50" : "border-line/80", dim && "opacity-60")}
               >
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <span className="font-semibold tabular-nums">{fmtRange(b.startsAt, b.endsAt, tz)}</span>
-                  <span className="min-w-0 flex-1 font-medium">{blockLabel(b)}</span>
+                  <TimePill tone={mine.length ? "accent" : "neutral"}>{fmtRange(b.startsAt, b.endsAt, tz)}</TimePill>
+                  <span className="min-w-0 flex-1 font-semibold">{blockLabel(b)}</span>
                 </div>
                 {b.title && b.labels.length ? <p className="mt-0.5 text-sm text-muted">{callLabels(b).join(", ")}</p> : null}
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
@@ -413,10 +414,12 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
               {[...groups.values()].map((g) => {
                 const b = blockById.get(g.blockId)!;
                 return (
-                  <div key={g.blockId} className="print-break overflow-hidden rounded-2xl border border-line bg-surface">
-                    <div className="flex items-baseline gap-2 border-b border-line bg-surface-2 px-4 py-2 text-sm">
-                      <span className="font-semibold tabular-nums">Called {fmtTime(b.startsAt, tz)}</span>
-                      <span className="truncate text-muted">{blockLabel(b)}</span>
+                  <div key={g.blockId} className="print-break overflow-hidden rounded-2xl border border-line/80 bg-surface shadow-card">
+                    <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-4 py-2.5 text-sm">
+                      <TimePill tone="solid" size="sm">
+                        Called {fmtTime(b.startsAt, tz)}
+                      </TimePill>
+                      <span className="truncate font-medium text-muted">{blockLabel(b)}</span>
                     </div>
                     <ul className="divide-y divide-line">
                       {g.people.map((pid) => {
@@ -474,7 +477,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
                                 </p>
                               ) : null}
                             </div>
-                            <span className="shrink-0 text-sm font-medium tabular-nums">{fmtRange(c.callAt, c.releaseAt, tz)}</span>
+                            <TimePill size="sm" className="mt-0.5 shrink-0 self-start">{fmtRange(c.callAt, c.releaseAt, tz)}</TimePill>
                           </li>
                         );
                       })}

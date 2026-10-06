@@ -276,28 +276,60 @@ async function main() {
           auth: randomBytes(16).toString("base64url"),
         };
       };
-      // Let pushes queued (via after()) by the earlier edits drain before subscribing.
-      await new Promise((r) => setTimeout(r, 4000));
-      await db.insert(pushSubscriptions).values([await sub(tmpUser.id, "wren"), await sub(junoUser.id, "juno")]);
-      const waitFor = async (pred: () => boolean) => {
-        for (let i = 0; i < 20 && !pred(); i++) await new Promise((r) => setTimeout(r, 250));
-      };
-      // Juno-only change: Juno's family gets one push, Wren's none.
-      await call("update_event", {
-        event: ev.id,
-        blocks: blocksNow.map((b, i) => (i === 0 ? { ...b, location: "Room 2" } : { ...b, end: `${day}T20:45` })),
+      // Dedicated cast members, accounts and event: nothing queued earlier in the run can target
+      // these fake subscriptions, so the counts below are exact.
+      await call("upsert_roles", { production: prodId, roles: [{ name: "Push A" }, { name: "Push B" }] });
+      await call("upsert_people", {
+        people: [
+          { name: `Pia Pushtest${TAG}`, email: `pia@${EMAIL_DOMAIN}` },
+          { name: `Bo Pushtest${TAG}`, email: `bo@${EMAIL_DOMAIN}` },
+        ],
       });
-      await waitFor(() => (hits.get("juno")?.n ?? 0) >= 1);
-      await new Promise((r) => setTimeout(r, 750)); // give a wrong push to Wren time to show up
-      assert.equal(hits.get("juno")?.n, 1, `juno pushes: ${JSON.stringify([...hits])}`);
-      assert.equal(hits.get("wren")?.n ?? 0, 0, "unaffected family was pushed");
+      await call("assign_roles", {
+        production: prodId,
+        assignments: [
+          { person: `pia@${EMAIL_DOMAIN}`, role: "Push A" },
+          { person: `bo@${EMAIL_DOMAIN}`, role: "Push B" },
+        ],
+      });
+      const pushUser = async (who: string) => {
+        const [u] = await db
+          .insert(users)
+          .values({ email: `${who}-acct@${EMAIL_DOMAIN}`, name: `${who} Parent${TAG}`, calendarToken: `tmp-${who}-${TAG}` })
+          .returning();
+        tempUserIds.push(u.id);
+        await db.update(people).set({ userId: u.id }).where(eq(people.email, `${who}@${EMAIL_DOMAIN}`));
+        await db.insert(pushSubscriptions).values(await sub(u.id, who));
+      };
+      await pushUser("pia");
+      await pushUser("bo");
+      const n = (who: string) => hits.get(who)?.n ?? 0;
+      const waitFor = async (label: string, pred: () => boolean) => {
+        for (let i = 0; i < 60 && !pred(); i++) await new Promise((r) => setTimeout(r, 250));
+        assert.ok(pred(), `${label}: ${JSON.stringify([...hits])}`);
+      };
+      const pushBlocks = [
+        { start: `${day}T10:00`, end: `${day}T11:00`, calls: [{ type: "role", ref: "Push A" }] },
+        { start: `${day}T11:00`, end: `${day}T12:00`, calls: [{ type: "role", ref: "Push B" }] },
+      ];
+      // First publish: everyone called, once.
+      const pushEv = await call("create_event", { production: prodId, title: "Push test", publish: true, blocks: pushBlocks });
+      await waitFor("publish push", () => n("pia") >= 1 && n("bo") >= 1);
+      // Change that only moves Pia's call: Pia's family gets one more, Bo's none.
+      await call("update_event", { event: pushEv.id, blocks: [{ ...pushBlocks[0], start: `${day}T10:30` }, pushBlocks[1]] });
+      await waitFor("change push", () => n("pia") >= 2);
+      await new Promise((r) => setTimeout(r, 1000)); // window for a wrong push to Bo to show up
+      assert.equal(n("bo"), 1, "unaffected family was pushed");
       // Cancel: everyone who was called.
-      await call("cancel_event", { event: ev.id, reason: "Push test" });
-      await waitFor(() => (hits.get("wren")?.n ?? 0) >= 1 && (hits.get("juno")?.n ?? 0) >= 2);
-      assert.equal(hits.get("wren")?.n, 1, "cancel didn't reach Wren's family");
-      assert.equal(hits.get("juno")?.n, 2, "cancel didn't reach Juno's family");
-      await call("publish_events", { events: [ev.id] }); // reinstate for the rest of the run
+      await call("cancel_event", { event: pushEv.id, reason: "Push test" });
+      await waitFor("cancel push", () => n("pia") >= 3 && n("bo") >= 2);
+      await new Promise((r) => setTimeout(r, 500));
+      assert.deepEqual([n("pia"), n("bo")], [3, 2], "exact push counts");
       for (const sv of servers) sv.close();
+      // Remove the push fixtures so later checks see the original 3-person cast and 1 event.
+      await call("delete_event", { event: pushEv.id });
+      await call("delete_role", { production: prodId, role: "Push A" });
+      await call("delete_role", { production: prodId, role: "Push B" });
       console.log("ok - push: one per affected family, none for unaffected, cancel reaches all");
     } else console.log("skip - push (no VAPID keys in env)");
 
