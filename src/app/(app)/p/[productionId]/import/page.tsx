@@ -18,7 +18,7 @@ export default async function ImportPage({ params }: PageProps<"/p/[productionId
 
   return (
     <div>
-      <PageHeader
+      <PageHeader as="h2"
         title="Import from a spreadsheet"
         subtitle="Already have your roles, scene breakdown or cast list in Google Sheets or Excel? Paste it here. Do roles first, then scenes, then cast."
         back={{ href: `/p/${productionId}`, label: "Overview" }}

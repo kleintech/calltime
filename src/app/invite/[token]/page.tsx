@@ -11,12 +11,12 @@ export const metadata: Metadata = { title: "You're invited", robots: { index: fa
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-8">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-8">
       <Link href="/" className="mb-5 text-center font-display text-2xl font-semibold tracking-tight">
         Call<span className="text-gold">time</span>
       </Link>
       {children}
-    </div>
+    </main>
   );
 }
 
@@ -177,14 +177,14 @@ export default async function InvitePage({ params }: PageProps<"/invite/[token]"
                 You already have a Calltime account. Sign in to {ward ? `add ${ward.firstName}` : "accept"}.
               </p>
               <SignInAcceptForm token={token} email={invite.email} cta={ward ? ctaSignedIn : cta} />
-              <Link href={loginHref} className="block text-center text-sm text-muted underline-offset-2 hover:underline">
+              <Link href={loginHref} className="flex min-h-11 items-center justify-center text-sm text-muted underline-offset-2 hover:underline">
                 Use a different account
               </Link>
             </div>
           ) : (
             <div className="space-y-5">
               <CreateAccountForm token={token} email={invite.email} name={existingUser?.name ?? nameGuess} cta={cta} />
-              <Link href={loginHref} className="block text-center text-sm font-medium text-accent">
+              <Link href={loginHref} className="flex min-h-11 items-center justify-center text-sm font-medium text-accent">
                 I already have an account — sign in
               </Link>
             </div>

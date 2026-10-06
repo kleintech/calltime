@@ -244,8 +244,8 @@ export default async function ManageSignupPage({ params, searchParams }: PagePro
       ) : null}
 
       {!isNew ? (
-        <p className="text-center text-xs text-muted">
-          <Link href={`/audition/${slug}`} className="underline">
+        <p className="text-center">
+          <Link href={`/audition/${slug}`} className="inline-flex min-h-11 items-center px-2 text-sm text-muted underline">
             Audition details
           </Link>
         </p>

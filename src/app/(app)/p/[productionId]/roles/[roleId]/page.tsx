@@ -45,7 +45,7 @@ export default async function RolePage({ params }: PageProps<"/p/[productionId]/
 
   return (
     <div>
-      <PageHeader title={role.name} subtitle={ROLE_KIND_SINGULAR[role.kind]} back={{ href: `${base}/roles`, label: "Roles" }} />
+      <PageHeader as="h2" title={role.name} subtitle={ROLE_KIND_SINGULAR[role.kind]} back={{ href: `${base}/roles`, label: "Roles" }} />
       <Card>
         <RoleForm key={role.id} action={updateRole.bind(null, productionId, roleId)} role={role} submitLabel="Save role" />
       </Card>

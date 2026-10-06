@@ -69,7 +69,7 @@ async function FamilyView({ ctx }: { ctx: Ctx }) {
               {fmtHours(myMinutes)} of {required} hrs
             </p>
           </div>
-          <Progress value={myMinutes} max={required * 60} />
+          <Progress value={myMinutes} max={required * 60} label="Your volunteer hours" />
           <p className="mt-2 text-sm text-muted">
             {myMinutes >= required * 60
               ? "You've signed up for all your hours — thank you!"
@@ -142,10 +142,10 @@ function ShiftHeader({ shift, tz, right }: { shift: Shift; tz: string; right?: R
   );
 }
 
-function Progress({ value, max }: { value: number; max: number }) {
+function Progress({ value, max, label = "Progress" }: { value: number; max: number; label?: string }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
-    <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+    <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label={label} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
       <div className={cn("h-full rounded-full", pct >= 100 ? "bg-success" : "bg-gold")} style={{ width: `${pct}%` }} />
     </div>
   );
@@ -388,7 +388,7 @@ function EditorShiftCard({
             {signups.length} of {shift.capacity} signed up
           </span>
         </div>
-        <Progress value={signups.length} max={shift.capacity} />
+        <Progress value={signups.length} max={shift.capacity} label="Spots filled" />
       </div>
       {signups.length ? (
         <ul className="divide-y divide-line rounded-xl bg-surface-2">

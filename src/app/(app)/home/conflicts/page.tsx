@@ -120,7 +120,7 @@ export default async function ConflictsPage({ searchParams }: PageProps<"/home/c
             </ul>
           )}
         </section>
-        <section>
+        <section className="order-first md:order-none">
           <SectionTitle>Add an absence</SectionTitle>
           <Card>
             <ConflictForm
@@ -134,6 +134,9 @@ export default async function ConflictsPage({ searchParams }: PageProps<"/home/c
               }}
             />
           </Card>
+          <p className="mt-3 text-sm text-muted">
+            The director sees this while planning. It doesn&apos;t excuse the absence automatically — check with your stage manager.
+          </p>
         </section>
       </div>
     </div>

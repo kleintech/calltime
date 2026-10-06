@@ -94,7 +94,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
       const p = sheet.people.get(c.targetId ?? "");
       return p ? (canEdit ? personName(p) : p.firstName) : b.labels[i];
     });
-  const blockLabel = (b: (typeof sheet.blocks)[number]) => b.title || callLabels(b).join(", ") || "Block";
+  const blockLabel = (b: (typeof sheet.blocks)[number]) => b.title || callLabels(b).join(", ") || "Rehearsal";
   const mapsHref = ev.location ? mapsUrl(ev.location) : null;
   const what = `${fmtDay(ev.startsAt, tz)} ${ev.title}`;
 
@@ -108,7 +108,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className={cn("font-display text-2xl font-semibold leading-tight", cancelled && "text-muted line-through")}>{ev.title}</h2>
-            <StatusBadges event={ev} tz={tz} now={now} showPublished={canEdit} />
+            <StatusBadges event={ev} tz={tz} now={now} showPublished={canEdit} verb={canEdit ? "Updated" : "Changed"} />
           </div>
           <p className="text-sm text-muted">{KIND_META[ev.kind].label}</p>
         </div>
@@ -300,18 +300,20 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
           {coveredPeople.map((p) => {
             const c = sheet.calls.get(p.id);
             return (
-              <Card key={p.id} className={cn("flex items-center gap-3", c && !cancelled && "border-accent/40 bg-accent-soft/40")}>
-                <Avatar name={p.firstName} />
-                <div className="min-w-0 flex-1">
+              <Card key={p.id} className={cn("flex flex-col items-start gap-3 sm:flex-row sm:items-center", c && !cancelled && "border-accent/40 bg-accent-soft/40")}>
+                <div className="flex min-w-0 items-center gap-3 self-stretch">
+                  <Avatar name={p.firstName} />
+                  <div className="min-w-0 flex-1">
                   <p className="font-semibold">{p.firstName}</p>
                   {c ? (
                     <p className="text-sm text-muted">{c.reasons.join(", ")}</p>
                   ) : (
                     <p className="text-sm text-muted">Not called for this event</p>
                   )}
+                  </div>
                 </div>
                 {c ? (
-                  <div className="text-right">
+                  <div className="sm:ml-auto sm:text-right">
                     <CallTime size="md" strike={cancelled}>
                       {fmtRange(c.callAt, c.releaseAt, tz)}
                     </CallTime>

@@ -17,11 +17,7 @@ export function LoginForm({ next }: { next?: string }) {
       }}
       className="space-y-4"
     >
-      {state.error ? (
-        <div role="alert">
-          <Notice tone="danger">{state.error}</Notice>
-        </div>
-      ) : null}
+      {state.error ? <Notice tone="danger">{state.error}</Notice> : null}
       <input type="hidden" name="next" value={next ?? ""} />
       <Field label="Email">
         <Input name="email" type="email" autoComplete="email" required />

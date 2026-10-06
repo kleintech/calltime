@@ -1,7 +1,7 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { people, resources, roles, scenes } from "@/db/schema";
-import { Card, EmptyState, PageHeader, SectionTitle } from "@/components/ui";
+import { Card, EmptyState, Heading, PageHeader, SectionTitle } from "@/components/ui";
 import { getCoveredPersonIds, requireProductionAccess } from "@/lib/access";
 import { sceneLabel } from "@/lib/calls";
 import { getMaterialsForPeople } from "@/lib/production-queries";
@@ -37,7 +37,10 @@ export default async function ResourcesPage({ params }: PageProps<"/p/[productio
     const names = ids.length ? await db.select().from(people).where(inArray(people.id, ids)) : [];
     return (
       <div>
-        <PageHeader title="Rehearsal materials" subtitle="Scripts, tracks and videos from the creative team." back={{ href: base, label: "Overview" }} />
+        <div className="mb-6">
+          <Heading>Rehearsal materials</Heading>
+          <p className="mt-1 text-base text-muted">Scripts, tracks and videos from the creative team.</p>
+        </div>
         {names.map((p) => (
           <section key={p.id}>
             <SectionTitle>{p.userId === user.id ? "Your materials" : `${p.firstName}'s materials`}</SectionTitle>
@@ -68,7 +71,7 @@ export default async function ResourcesPage({ params }: PageProps<"/p/[productio
 
   return (
     <div>
-      <PageHeader
+      <PageHeader as="h2"
         title="Resources"
         subtitle="Links to scripts, vocal tracks and choreo videos. Cast and families see the ones for their roles and scenes."
         back={{ href: base, label: "Overview" }}

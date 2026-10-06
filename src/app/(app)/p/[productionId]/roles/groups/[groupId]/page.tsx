@@ -25,7 +25,7 @@ export default async function GroupPage({ params }: PageProps<"/p/[productionId]
 
   return (
     <div>
-      <PageHeader title={group.name} subtitle="Role group" back={{ href: `/p/${productionId}/roles`, label: "Roles" }} />
+      <PageHeader as="h2" title={group.name} subtitle="Role group" back={{ href: `/p/${productionId}/roles`, label: "Roles" }} />
       <Card>
         <GroupForm
           key={group.id}

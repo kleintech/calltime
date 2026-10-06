@@ -22,7 +22,7 @@ export default async function EditEventPage({ params }: PageProps<"/p/[productio
 
   return (
     <div>
-      <PageHeader
+      <PageHeader as="h2"
         title={
           <span className="flex flex-wrap items-center gap-2">
             Edit event <StatusBadges event={ev} tz={tz} now={new Date()} showPublished />

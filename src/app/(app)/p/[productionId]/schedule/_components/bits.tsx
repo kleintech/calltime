@@ -20,6 +20,7 @@ export function StatusBadges({
   now,
   showPublished = false,
   changed: changedOverride,
+  verb = "Updated",
 }: {
   event: BadgeEvent;
   tz: string;
@@ -27,6 +28,8 @@ export function StatusBadges({
   showPublished?: boolean;
   /** Per-viewer change date (e.g. unacknowledged change); overrides the 7-day heuristic when given. */
   changed?: Date | null;
+  /** Families read "Changed"; the team reads "Updated" (docs/ux/GUIDELINES.md §0). */
+  verb?: "Updated" | "Changed";
 }) {
   const changed = changedOverride !== undefined ? changedOverride : recentChange(event, now);
   return (
@@ -40,7 +43,7 @@ export function StatusBadges({
       {event.status === "published" && showPublished && !changed ? <Badge tone="success">Published</Badge> : null}
       {event.status === "published" && changed ? (
         <Badge tone="gold">
-          <RefreshCw className="size-3" /> Updated {fmtShort(changed, tz)}
+          <RefreshCw className="size-3" /> {verb} {fmtShort(changed, tz)}
         </Badge>
       ) : null}
     </>

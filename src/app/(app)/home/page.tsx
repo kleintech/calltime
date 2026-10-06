@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, inArray, min, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lt, min, ne, or } from "drizzle-orm";
 import { Ban, CalendarClock, FolderOpen, HandHeart, Megaphone, NotebookPen, CalendarPlus, ChevronRight, ExternalLink, MapPin, RefreshCw, StickyNote, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
@@ -9,7 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { getCallsForPeople, type PersonCall } from "@/lib/calls";
 import { getUnacknowledgedChanges } from "@/lib/changes";
 import { getUnreadNoteCount } from "@/lib/notes";
-import { addLocalDays, mapsUrl, personColor } from "@/lib/schedule-shared";
+import { addLocalDays, KIND_META, mapsUrl, personColor } from "@/lib/schedule-shared";
 import { dayKey, fmtDay, fmtDayLong, fmtRange, fmtTime, toDateInput, toTimeInput } from "@/lib/time";
 import { weekKey } from "@/lib/schedule-shared";
 import { GotItButton } from "./_components/got-it";
@@ -123,14 +123,46 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
     return fmtDay(d, tz);
   };
 
-  const days = new Map<string, { label: string; groups: EventGroup[] }>();
+  type NotCalled = { id: string; productionId: string; title: string; startsAt: Date; endsAt: Date; tz: string };
+  const days = new Map<string, { label: string; groups: EventGroup[]; notCalled: NotCalled[] }>();
   for (const g of rest) {
     const first = g.calls[0];
     const k = dayKey(first.callAt, g.tz);
-    const d = days.get(k) ?? { label: relDay(first.callAt, g.tz), groups: [] };
+    const d = days.get(k) ?? { label: relDay(first.callAt, g.tz), groups: [], notCalled: [] };
     d.groups.push(g);
     days.set(k, d);
   }
+  // "Maya isn't called today": published rehearsals this week that none of the shown people are in.
+  // Families get anxious when a rehearsal is on and they're not sure — an explicit row saves a text to the SM.
+  const shownPeople = filter ? [peopleById.get(filter)!] : persons;
+  const calledEventIds = new Set(allCalls.filter((c) => shownPeople.some((p) => p.id === c.person.id)).map((c) => c.event.id));
+  const castShowIds = productions.filter((p) => p.relation === "cast" && p.production.status !== "closed").map((p) => p.production.id);
+  const weekEvents =
+    castShowIds.length && shownPeople.length
+      ? await db
+          .select()
+          .from(events)
+          .where(
+            and(
+              inArray(events.productionId, castShowIds),
+              eq(events.status, "published"),
+              gte(events.endsAt, now),
+              lt(events.startsAt, new Date(now.getTime() + 7 * 86400_000)),
+              ne(events.kind, "meeting"),
+            ),
+          )
+          .orderBy(asc(events.startsAt))
+      : [];
+  for (const e of weekEvents) {
+    if (calledEventIds.has(e.id)) continue;
+    const tz = tzOf(productions.find((p) => p.production.id === e.productionId)?.production.orgId ?? "");
+    const k = dayKey(e.startsAt, tz);
+    const d = days.get(k) ?? { label: relDay(e.startsAt, tz), groups: [], notCalled: [] };
+    d.notCalled.push({ id: e.id, productionId: e.productionId, title: e.title, startsAt: e.startsAt, endsAt: e.endsAt, tz });
+    days.set(k, d);
+  }
+  const orderedDays = [...days.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const notCalledNames = shownPeople.length > 1 ? "Nobody here is" : `${shownPeople[0]?.firstName ?? "You"} ${shownPeople[0]?.userId === user.id ? "aren't" : "isn't"}`;
 
   // Announcements for the shows the user's people are in: pinned, or posted in the last 7 days
   // Closed shows stay reachable from Shows, but don't clutter My Calls with their links/announcements.
@@ -154,6 +186,9 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
   const running = productions.filter((p) => (p.relation === "admin" || p.relation === "creative") && p.production.status !== "closed");
   const runningInfo = running.length ? await getRunningInfo(running, now) : { events: [], drafts: new Map<string, number>(), firstDraft: new Map<string, Date | null>() };
 
+  // Every show the family is in has closed: say so instead of a dead "no upcoming calls".
+  const castShows = productions.filter((p) => p.relation === "cast");
+  const wrapped = castShows.length > 0 && castShows.every((p) => p.production.status === "closed") ? castShows[0].production.title : null;
   const names = persons.map((p) => p.firstName);
   const onlySelf = persons.length === 1 && persons[0].userId === user.id;
   const title =
@@ -201,7 +236,7 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
                         {multi ? <span className="text-muted"> · {a.who.join(" & ")}</span> : null}
                         {a.cancelled ? <strong className="ml-1 text-danger">CANCELLED</strong> : a.removed ? <strong className="ml-1 text-danger">REMOVED</strong> : null}
                         {a.lines.map((t, i) => (
-                          <span key={i} className="mt-0.5 block">
+                          <span key={i} className="mt-0.5 block text-base">
                             {t}
                           </span>
                         ))}
@@ -241,14 +276,26 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
       ) : null}
 
       {covered.length > 0 && !next && rest.length === 0 ? (
-        <EmptyState
-          title="No upcoming calls"
-          body={
-            filter
-              ? "Nothing scheduled for this person right now."
-              : "When the director publishes the rehearsal schedule, calls show up here and in your calendar."
-          }
-        />
+        wrapped ? (
+          <EmptyState
+            title={`That's a wrap on ${wrapped}!`}
+            body="Calls for your next show will appear here as soon as you're cast."
+            action={
+              <LinkButton href="/productions" variant="secondary">
+                Past shows
+              </LinkButton>
+            }
+          />
+        ) : (
+          <EmptyState
+            title="No upcoming calls"
+            body={
+              filter
+                ? "Nothing scheduled for this person right now."
+                : "When the director publishes the rehearsal schedule, calls show up here and in your calendar."
+            }
+          />
+        )
       ) : null}
 
       {covered.length > 0 ? (
@@ -269,12 +316,24 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
       {days.size > 0 ? (
         <div className="mt-8 space-y-6">
           <h2 className="font-display text-xl font-semibold">Coming up</h2>
-          {[...days.entries()].map(([k, d]) => (
+          {orderedDays.map(([k, d]) => (
             <section key={k}>
               <h3 className="mb-2 text-sm font-semibold text-muted">{d.label}</h3>
               <div className="space-y-2">
                 {d.groups.map((g) => (
                   <CallCard key={g.key} group={g} multi={multi} showProduction={multiProduction} now={now} changed={changedAt(g.key)} changes={unacked.get(g.key)?.changes.flatMap((c) => c.lines) ?? []} />
+                ))}
+                {d.notCalled.map((e) => (
+                  <Link
+                    key={e.id}
+                    href={`/p/${e.productionId}/schedule/${e.id}`}
+                    className="flex min-h-11 items-center gap-2 rounded-xl border border-dashed border-line px-3 text-sm text-muted hover:bg-surface-2"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium text-ink">{notCalledNames} called</span> · {e.title} {fmtRange(e.startsAt, e.endsAt, e.tz)}
+                    </span>
+                    <ChevronRight className="size-4 shrink-0" />
+                  </Link>
                 ))}
               </div>
             </section>
@@ -593,7 +652,7 @@ function HeroCard({
             <CalendarClock className="size-4" /> Next call · {label}
           </span>
           <span className="flex flex-wrap justify-end gap-1">
-            <StatusBadges event={ev} tz={tz} now={now} changed={changed} />
+            <StatusBadges event={ev} tz={tz} now={now} changed={changed} verb="Changed" />
           </span>
         </div>
         {soon ? (
@@ -625,8 +684,13 @@ function HeroCard({
             <span className="font-semibold text-ink">Pick up:</span> {pickups}
           </p>
         ) : null}
-        <p className="mt-3 text-[15px] text-muted">
-          {first.production.title} · {ev.title}
+        <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted">
+          {ev.kind !== "rehearsal" ? (
+            <Badge tone={ev.kind === "performance" || ev.kind === "tech" || ev.kind === "dress" ? "gold" : "neutral"}>{KIND_META[ev.kind].label}</Badge>
+          ) : null}
+          <span>
+            {first.production.title} · {ev.title}
+          </span>
         </p>
         {changed ? (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-gold-soft px-3 py-2 text-sm">
@@ -688,7 +752,7 @@ function CallCard({
             ) : null}
           </p>
           <span className="flex shrink-0 flex-wrap justify-end gap-1">
-            <StatusBadges event={ev} tz={tz} now={now} changed={changed} />
+            <StatusBadges event={ev} tz={tz} now={now} changed={changed} verb="Changed" />
           </span>
         </div>
         <div className="mt-1 space-y-1.5">

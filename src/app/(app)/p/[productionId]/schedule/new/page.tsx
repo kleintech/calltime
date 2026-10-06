@@ -16,7 +16,7 @@ export default async function NewEventPage({ params, searchParams }: PageProps<"
 
   return (
     <div>
-      <PageHeader title="New event" back={{ href: `/p/${productionId}/schedule`, label: "Schedule" }} />
+      <PageHeader as="h2" title="New event" back={{ href: `/p/${productionId}/schedule`, label: "Schedule" }} />
       <EventEditor
         productionId={productionId}
         options={options}

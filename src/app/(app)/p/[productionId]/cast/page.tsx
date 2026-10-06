@@ -55,7 +55,7 @@ export default async function CastPage({ params, searchParams }: PageProps<"/p/[
       {team.length ? (
         <List>
           {team.map((t, i) => (
-            <ListRow key={i} title={t.name} subtitle={t.title} right={<Avatar name={t.name} />} />
+            <ListRow key={i} title={t.name} subtitle={t.title} leading={<Avatar name={t.name} />} />
           ))}
         </List>
       ) : (
@@ -78,7 +78,7 @@ export default async function CastPage({ params, searchParams }: PageProps<"/p/[
                 subtitle={e.roles
                   .map((r) => `${roleById.get(r.roleId)?.name}${r.kind === "primary" ? "" : ` (${r.kind})`}`)
                   .join(", ")}
-                right={<Avatar name={personName(e.person)} />}
+                leading={<Avatar name={personName(e.person)} />}
               />
             ))}
           </List>

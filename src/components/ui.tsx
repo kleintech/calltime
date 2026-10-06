@@ -656,6 +656,7 @@ export function PageHeader({
   actions,
   back,
   eyebrow,
+  as = "h1",
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -663,14 +664,17 @@ export function PageHeader({
   back?: { href: string; label: string };
   /** Small line above the title (e.g. a date, "Pirates of Penzance"). */
   eyebrow?: ReactNode;
+  /** Use "h2" inside production routes — the production header already owns the page's h1. */
+  as?: "h1" | "h2";
 }) {
+  const Tag = as;
   return (
     <div className="mb-6">
       {back ? <BackLink href={back.href} label={back.label} className="mb-2" /> : null}
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           {eyebrow ? <p className="mb-1 text-sm font-medium text-muted">{eyebrow}</p> : null}
-          <h1 className="font-display text-[1.875rem] font-semibold leading-[2.25rem] tracking-tight sm:text-4xl">{title}</h1>
+          <Tag className="font-display text-[1.875rem] font-semibold leading-[2.25rem] tracking-tight sm:text-4xl">{title}</Tag>
           {subtitle ? <p className="mt-1.5 text-base text-muted">{subtitle}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}

@@ -82,7 +82,7 @@ export default async function PersonPage({ params }: PageProps<"/p/[productionId
 
   return (
     <div>
-      <PageHeader
+      <PageHeader as="h2"
         back={{ href: `${base}/cast`, label: "Cast" }}
         title={
           <span className="flex items-center gap-3">

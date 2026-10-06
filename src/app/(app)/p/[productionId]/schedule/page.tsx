@@ -224,7 +224,7 @@ export default async function SchedulePage({ params, searchParams }: PageProps<"
                                   <p className={cn("font-semibold leading-snug", cancelled && "text-muted line-through")}>{ev.title}</p>
                                   <div className="flex shrink-0 flex-wrap justify-end gap-1">
                                     {done ? <Badge>Done</Badge> : null}
-                                    <StatusBadges event={ev} tz={tz} now={now} />
+                                    <StatusBadges event={ev} tz={tz} now={now} showPublished={canEdit} verb={canEdit ? "Updated" : "Changed"} />
                                   </div>
                                 </div>
                                 <p className={cn("text-sm text-muted", cancelled && "line-through")}>

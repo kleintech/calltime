@@ -38,7 +38,7 @@ export default async function ScenePage({ params }: PageProps<"/p/[productionId]
 
   return (
     <div>
-      <PageHeader
+      <PageHeader as="h2"
         title={scene.name}
         subtitle={`Act ${scene.act} · ${num}`}
         back={{ href: `/p/${productionId}/scenes`, label: "Scenes" }}

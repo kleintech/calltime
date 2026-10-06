@@ -42,21 +42,21 @@ export function ConflictPicker({
       ) : null}
       {rows.length === 0 ? (
         <p className="flex items-center gap-2 text-base text-muted">
-          <CalendarX2 className="size-5 shrink-0" aria-hidden /> No conflicts added.
+          <CalendarX2 className="size-5 shrink-0" aria-hidden /> No dates added yet.
         </p>
       ) : null}
       {rows.map((r, i) => (
         <fieldset key={r.key} className="space-y-3 rounded-xl border border-line bg-surface-2/50 p-3">
-          <legend className="sr-only">Conflict {i + 1}</legend>
+          <legend className="sr-only">Date {i + 1}</legend>
           <div className="flex items-end gap-2">
             <label className="block min-w-0 flex-1 space-y-1.5">
               <span className="text-sm font-medium">Date</span>
-              <Input type="date" value={r.date} min={min} max={max} onChange={(e) => update(r.key, { date: e.target.value })} required />
+              <Input type="date" value={r.date} min={min} max={max} onChange={(e) => update(r.key, { date: e.target.value })} />
             </label>
             <Button
               type="button"
               variant="ghost"
-              aria-label={`Remove conflict ${i + 1}`}
+              aria-label={`Remove date ${i + 1}`}
               className="px-3"
               onClick={() => setRows((cur) => cur.filter((x) => x.key !== r.key))}
             >
@@ -71,11 +71,11 @@ export function ConflictPicker({
             <div className="grid grid-cols-2 gap-3">
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium">From</span>
-                <Input type="time" step={900} value={r.start ?? ""} onChange={(e) => update(r.key, { start: e.target.value })} required />
+                <Input type="time" step={900} value={r.start ?? ""} onChange={(e) => update(r.key, { start: e.target.value })} />
               </label>
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium">Until</span>
-                <Input type="time" step={900} value={r.end ?? ""} onChange={(e) => update(r.key, { end: e.target.value })} required />
+                <Input type="time" step={900} value={r.end ?? ""} onChange={(e) => update(r.key, { end: e.target.value })} />
               </label>
             </div>
           ) : null}
