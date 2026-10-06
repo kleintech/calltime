@@ -7,7 +7,7 @@ import { toast } from "@/components/toast";
 import { buttonClass, cn } from "@/components/ui";
 import { acknowledgeEvent } from "../actions";
 
-/** Big, obvious acknowledgement so families can clear a change once they've read it. */
+/** Obvious acknowledgement so families can clear a change once they've read it (secondary, so the next-call hero stays the loudest thing on screen). */
 export function GotItButton({ eventId, revision, className }: { eventId: string; revision: number; className?: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -15,7 +15,7 @@ export function GotItButton({ eventId, revision, className }: { eventId: string;
     <button
       type="button"
       disabled={pending}
-      className={cn(buttonClass("primary"), "min-w-28", className)}
+      className={cn(buttonClass("secondary"), "min-w-28", className)}
       onClick={() =>
         start(async () => {
           const r = await acknowledgeEvent(eventId, revision);

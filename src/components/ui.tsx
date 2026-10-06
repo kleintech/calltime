@@ -179,7 +179,8 @@ export function Card({
       className={cn(
         "rounded-2xl",
         cardTones[tone],
-        cardPadding[padding],
+        // A padding utility in className (e.g. "p-0") replaces the default instead of fighting it.
+        !/(^|\s)(p|px|py)-/.test(className ?? "") && cardPadding[padding],
         interactive && "transition-[box-shadow,transform] duration-200 hover:shadow-raised active:scale-[.99]",
         className,
       )}

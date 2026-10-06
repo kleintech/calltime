@@ -3,7 +3,7 @@ import { Ban, CalendarClock, FolderOpen, HandHeart, Megaphone, NotebookPen, Cale
 import Link from "next/link";
 import { db } from "@/db";
 import { announcements, changeAcks, eventBlocks, eventChanges, events, organizations } from "@/db/schema";
-import { Badge, Card, Chip, cn, EmptyState, LinkButton } from "@/components/ui";
+import { Badge, CallTime, Card, Chip, cn, EmptyState, LinkButton, Ticket } from "@/components/ui";
 import { getCoveredPersonIds, getUserProductions } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { getCallsForPeople, type PersonCall } from "@/lib/calls";
@@ -399,10 +399,10 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
                       <Badge tone="warn">
                         {drafts} draft{drafts === 1 ? "" : "s"}
                       </Badge>
-                      <span className="min-w-0 flex-1 text-ink/80">
+                      <span className="order-last basis-full text-ink/80">
                         {firstDraft ? `From ${fmtDay(firstDraft, tz)} · ` : ""}families can&apos;t see these yet
                       </span>
-                      <span className="inline-flex items-center gap-0.5 font-semibold text-accent">
+                      <span className="ml-auto inline-flex items-center gap-0.5 font-semibold text-accent">
                         Review &amp; publish <ChevronRight aria-hidden className="size-4" />
                       </span>
                     </Link>
@@ -543,20 +543,50 @@ function HeroCard({
   const soon = startsIn(first.callAt, now);
   const pickups = group.calls.length > 1 ? group.calls.map((c) => `${c.person.firstName} ${fmtTime(c.releaseAt, tz)}`).join(" · ") : null;
   return (
-    <div className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
-      <div className="h-1.5" style={{ background: accent }} />
-      <Link href={href} className="block px-5 pb-3 pt-4 hover:bg-surface-2/50">
-        <div className="flex items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: accent }}>
+    <Ticket
+      accent={accent}
+      stub={
+        <div className="-mx-5 -mb-4 -mt-3.5">
+          {loc ? (
+            <a
+              href={mapsUrl(ev.location ?? loc)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex min-h-12 items-center gap-2 px-5 text-[15px] transition-colors hover:bg-surface-2/60"
+            >
+              <MapPin className="size-4 shrink-0 text-muted" />
+              <span className="min-w-0 flex-1">{loc}</span>
+              <ExternalLink className="size-4 shrink-0 text-muted" aria-label="Open in Maps" />
+            </a>
+          ) : null}
+          <div className="flex gap-2 px-4 pb-4 pt-1">
+            <LinkButton href={href} variant="soft" className="flex-1">
+              Details
+            </LinkButton>
+            <LinkButton href={conflictHref(first, tz)} variant="ghost" className="flex-1 text-muted">
+              Can&apos;t make it
+            </LinkButton>
+          </div>
+        </div>
+      }
+    >
+      <Link href={href} className="-m-5 block rounded-t-3xl p-5 transition-colors hover:bg-surface-2/40">
+        <div className="flex items-start justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 pt-0.5 text-xs font-semibold uppercase tracking-[.08em] text-gold">
             <CalendarClock className="size-4" /> Next call · {label}
           </span>
           <span className="flex flex-wrap justify-end gap-1">
             <StatusBadges event={ev} tz={tz} now={now} changed={changed} />
           </span>
         </div>
-        {soon ? <p className="mt-1 text-sm font-semibold text-accent">{soon}</p> : null}
+        {soon ? (
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-sm font-semibold text-accent">
+            <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current" />
+            {soon}
+          </p>
+        ) : null}
         {cancelledSameDay.map((g) => (
-          <p key={g.key} className="mt-2 flex items-start gap-1.5 rounded-lg bg-danger-soft px-2.5 py-1.5 text-sm text-danger">
+          <p key={g.key} className="mt-3 flex items-start gap-1.5 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">
             <Ban className="mt-0.5 size-4 shrink-0" />
             <span>
               {g.calls.map((c) => c.person.firstName).join(" & ")}&apos;s {fmtTime(g.calls[0].callAt, g.tz)} {g.calls[0].event.title} that day is{" "}
@@ -564,22 +594,25 @@ function HeroCard({
             </span>
           </p>
         ))}
-        <div className="mt-3 space-y-3">
+        <div className="mt-4 space-y-4">
           {group.calls.map((c) => (
             <div key={c.person.id}>
-              {multi || group.calls.length > 1 ? <PersonChip name={c.person.firstName} className="mb-1" /> : null}
-              <p className="text-sm text-muted">Called</p>
-              <p className="font-display text-3xl font-semibold leading-tight tracking-tight tabular-nums">{fmtRange(c.callAt, c.releaseAt, tz)}</p>
-              <p className="mt-0.5 text-[15px]">{c.reasons.join(", ")}</p>
+              {multi || group.calls.length > 1 ? <PersonChip name={c.person.firstName} className="mb-1.5" /> : null}
+              <CallTime size={group.calls.length > 1 ? "lg" : "xl"}>{fmtRange(c.callAt, c.releaseAt, tz)}</CallTime>
+              <p className="mt-1 text-base">{c.reasons.join(", ")}</p>
             </div>
           ))}
         </div>
-        {pickups ? <p className="mt-3 text-sm text-muted">Pick up: {pickups}</p> : null}
-        <p className="mt-3 text-sm text-muted">
+        {pickups ? (
+          <p className="tabular mt-3 text-[15px] text-muted">
+            <span className="font-semibold text-ink">Pick up:</span> {pickups}
+          </p>
+        ) : null}
+        <p className="mt-3 text-[15px] text-muted">
           {first.production.title} · {ev.title}
         </p>
         {changed ? (
-          <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-gold-soft px-2.5 py-1.5 text-sm">
+          <p className="mt-3 flex items-start gap-2 rounded-xl bg-gold-soft px-3 py-2 text-sm">
             <RefreshCw className="mt-0.5 size-4 shrink-0 text-gold" />
             <span>
               <strong>Changed {fmtDay(changed, tz)}:</strong> {changes.join("; ")}
@@ -587,36 +620,13 @@ function HeroCard({
           </p>
         ) : null}
         {ev.notes ? (
-          <p className="mt-2 flex items-start gap-1.5 text-sm">
+          <p className="mt-3 flex items-start gap-2 text-[15px]">
             <StickyNote className="mt-0.5 size-4 shrink-0 text-muted" />
             <span className="line-clamp-2">{ev.notes}</span>
           </p>
         ) : null}
       </Link>
-      {loc ? (
-        <a
-          href={mapsUrl(ev.location ?? loc)}
-          target="_blank"
-          rel="noreferrer"
-          className="flex min-h-12 items-center gap-2 border-t border-line px-5 text-sm hover:bg-surface-2"
-        >
-          <MapPin className="size-4 shrink-0 text-muted" />
-          <span className="min-w-0 flex-1">{loc}</span>
-          <ExternalLink className="size-4 shrink-0 text-muted" aria-label="Open in Maps" />
-        </a>
-      ) : null}
-      <div className="flex border-t border-line">
-        <Link href={href} className="flex min-h-12 flex-1 items-center justify-center text-sm font-semibold text-accent hover:bg-surface-2">
-          Details
-        </Link>
-        <Link
-          href={conflictHref(first, tz)}
-          className="flex min-h-12 flex-1 items-center justify-center border-l border-line text-sm font-medium text-muted hover:bg-surface-2 hover:text-ink"
-        >
-          Can&apos;t make it
-        </Link>
-      </div>
-    </div>
+    </Ticket>
   );
 }
 
@@ -644,8 +654,8 @@ function CallCard({
     <Link
       href={`/p/${first.production.id}/schedule/${ev.id}`}
       className={cn(
-        "flex gap-3 rounded-2xl border bg-surface p-3.5 transition hover:bg-surface-2",
-        cancelled ? "border-danger/30" : changed ? "border-gold/50" : "border-line",
+        "flex gap-3 rounded-2xl border bg-surface p-4 shadow-card transition-[box-shadow,transform] duration-200 hover:shadow-raised active:scale-[.99]",
+        cancelled ? "border-danger/30" : changed ? "border-gold-bright/60" : "border-line/80",
       )}
     >
       <KindIcon kind={ev.kind} color={cancelled ? undefined : first.production.accentColor} />
@@ -669,7 +679,7 @@ function CallCard({
             <div key={c.person.id}>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 {multi ? <PersonChip name={c.person.firstName} /> : null}
-                <span className={cn("font-semibold tabular-nums", cancelled && "text-muted line-through")}>
+                <span className={cn("tabular text-[17px] font-semibold", cancelled && "text-muted line-through decoration-danger decoration-2")}>
                   {fmtRange(c.callAt, c.releaseAt, tz)}
                 </span>
               </div>

@@ -277,7 +277,7 @@ async function main() {
         };
       };
       // Let pushes queued (via after()) by the earlier edits drain before subscribing.
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 4000));
       await db.insert(pushSubscriptions).values([await sub(tmpUser.id, "wren"), await sub(junoUser.id, "juno")]);
       const waitFor = async (pred: () => boolean) => {
         for (let i = 0; i < 20 && !pred(); i++) await new Promise((r) => setTimeout(r, 250));

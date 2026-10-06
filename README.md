@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Calltime
 
-## Getting Started
+Rehearsal schedules and call times for theater companies. The creative team schedules rehearsals
+**by scene**; every actor and their parents/guardians instantly see **exactly when they're called** —
+in the app, as phone notifications when something changes for *their* kid, and in a subscribed
+calendar feed. Replaces chat-feed scheduling (Band, GroupMe) where families had to read every post.
 
-First, run the development server:
+Prototype: https://calltime-psi.vercel.app (demo sign-in buttons on the landing page; every demo password is `calltime`).
+
+## What's in it
+
+- **Tenancy** — platform admin creates companies (`/admin`); company admins manage people, members,
+  invites and API keys (`/org`).
+- **Productions** — roles (lead/supporting/featured/ensemble, doubling, understudies), role groups,
+  scenes, the scene × role breakdown, cast with guardians, creative team, spreadsheet import.
+- **Schedule** — events (rehearsal, tech, dress, performance, fitting…) made of timed blocks that call
+  scenes, groups, roles, people or the full cast. Live "who's called" preview with conflict warnings,
+  drafts → publish, copy week, call sheet, attendance with minor sign-out, rehearsal reports, actor notes.
+- **Families** — My Calls (`/home`): next call, per-kid alerts for changes with "Got it", cancellations,
+  notes, materials, volunteer shifts, "Can't make it" conflicts.
+- **Change tracking** — every edit to a published event is diffed per person; only families whose own
+  calls changed are alerted (in-app + web push). Directors see who has and hasn't seen a change.
+- **Calendar** — per-user secret iCalendar feed (`/api/calendar/<token>.ics`) for Apple/Google/Outlook.
+- **Auditions** — public signup with slots and date conflicts (`/audition/<slug>`), check-in, callbacks,
+  casting into people/guardians/roles (conflicts carry over into scheduling).
+- **MCP server** (`/api/mcp`) — 27 tools so an AI assistant can build a production from a script and cast
+  list (`import_production`), schedule rehearsals and read call sheets. Keys at `/org/api-keys`.
+
+## Stack
+
+Next.js 16 (App Router, Server Actions) · TypeScript · Tailwind v4 · Drizzle ORM · Neon Postgres ·
+web-push · mcp-handler. Deployed on Vercel (project `calltime`, team Kleintech).
+
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+vercel env pull .env.local     # or set DATABASE_URL (+ VAPID_* for push) yourself
+npm run db:push                # apply schema
+npm run db:seed                # WIPES the database and loads the demo company
+npm run dev                    # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`npm run typecheck`, `npx eslint src`. Demo accounts and the domain/permission model are in
+[`docs/SPEC.md`](docs/SPEC.md); the design system in [`docs/DESIGN.md`](docs/DESIGN.md); UX guidelines and
+review in [`docs/ux/`](docs/ux); competitive research and feature ideas in [`docs/research/`](docs/research).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Connect Claude (MCP)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a key at `/org/api-keys`, then:
 
-## Learn More
+```bash
+claude mcp add --transport http calltime https://<host>/api/mcp --header "Authorization: Bearer ct_…"
+```
 
-To learn more about Next.js, take a look at the following resources:
+### Environment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Neon Postgres (provisioned by the Vercel Neon integration) |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web push; push is skipped if unset |
+| `DEMO_MODE=1` | Shows one-tap demo sign-in for the seeded demo accounts in production |
+| `RESEND_API_KEY`, `RESEND_FROM` | Optional: email the weekly change digest (preview at `/api/digest/preview`) |
