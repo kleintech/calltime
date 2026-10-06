@@ -100,7 +100,9 @@ export function resolveTarget(idx: ProductionCastIndex, t: CallTarget): Set<stri
       for (const p of idx.allCast) out.add(p);
       break;
     case "person":
-      if (t.targetId) out.add(t.targetId);
+      // Someone removed from the cast can no longer see the production, so their individual calls
+      // stop resolving too (the team's call sheet and the family view then agree).
+      if (t.targetId && idx.allCast.has(t.targetId)) out.add(t.targetId);
       break;
     case "role":
       if (t.targetId) addRole(t.targetId, true);

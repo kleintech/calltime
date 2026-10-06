@@ -7,6 +7,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { auditionSignups, roles } from "@/db/schema";
 import { normalizeEmail } from "@/lib/auth";
+import { clientIp, takeRateLimit } from "@/lib/rate-limit";
 import { getPublicAudition, insertSignupWithCapacity, isUuid, moveSignupSlot, parseConflictDates, SlotFullError } from "@/lib/auditions";
 import { publicSlotOptions, type SlotOption } from "./slot-options";
 
@@ -62,6 +63,17 @@ export async function submitSignup(_: PublicFormState, fd: FormData): Promise<Pu
   if (!row) return { error: "This audition no longer exists." };
   const { audition, production, org } = row;
   if (!audition.isOpen) return { error: "Signups for this audition are closed." };
+  // Public and unauthenticated: cap signups per device and per family so nobody can fill every
+  // slot by script (generous enough for a school network full of parents and for siblings).
+  const limitEmail = normalizeEmail(val(fd, "guardianEmail") || val(fd, "email"));
+  const limited = await takeRateLimit(
+    [
+      { key: `signup:ip:${await clientIp()}`, max: 25 },
+      ...(limitEmail ? [{ key: `signup:${audition.id}:${limitEmail}`, max: 6 }] : []),
+    ],
+    "That's a lot of signups from here in a short time. Wait a few minutes and try again, or contact the company.",
+  );
+  if (limited) return { error: limited };
 
   const parsed = signupSchema.safeParse({
     firstName: val(fd, "firstName"),

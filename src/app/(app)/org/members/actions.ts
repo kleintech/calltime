@@ -45,8 +45,8 @@ export async function inviteMember(_: FormState, fd: FormData): Promise<FormStat
 
 const memberSchema = z.object({ orgId: z.uuid(), userId: z.uuid() });
 
-async function adminCount(orgId: string) {
-  const [row] = await db
+async function adminCount(orgId: string, q: Pick<typeof db, "select"> = db) {
+  const [row] = await q
     .select({ n: count() })
     .from(orgMembers)
     .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.role, "admin")));
@@ -61,9 +61,12 @@ export async function setMemberRole(fd: FormData) {
     where: and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)),
   });
   if (!membership) return;
-  // Never leave an org without an admin.
-  if (membership.role === "admin" && role === "member" && (await adminCount(orgId)) <= 1) return;
-  await db.update(orgMembers).set({ role }).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)));
+  // Never leave an org without an admin — counted under a lock so two concurrent demotions can't both pass.
+  await db.transaction(async (tx) => {
+    await tx.select().from(orgMembers).where(eq(orgMembers.orgId, orgId)).for("update");
+    if (membership.role === "admin" && role === "member" && (await adminCount(orgId, tx)) <= 1) return;
+    await tx.update(orgMembers).set({ role }).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)));
+  });
   revalidateOrg(orgId);
 }
 
@@ -74,8 +77,11 @@ export async function removeMember(fd: FormData) {
     where: and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)),
   });
   if (!membership) return;
-  if (membership.role === "admin" && (await adminCount(orgId)) <= 1) return;
-  await db.delete(orgMembers).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)));
+  await db.transaction(async (tx) => {
+    await tx.select().from(orgMembers).where(eq(orgMembers.orgId, orgId)).for("update");
+    if (membership.role === "admin" && (await adminCount(orgId, tx)) <= 1) return;
+    await tx.delete(orgMembers).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)));
+  });
   revalidateOrg(orgId);
 }
 

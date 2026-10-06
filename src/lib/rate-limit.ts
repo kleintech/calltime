@@ -42,6 +42,25 @@ export async function recordLoginFailure(email: string) {
   if (Math.random() < 0.05) await db.delete(authFailures).where(lt(authFailures.createdAt, new Date(Date.now() - 86400_000)));
 }
 
+/**
+ * Generic limiter for public forms (audition signup): each key may be hit `max` times per window.
+ * Null if allowed, else a friendly message. Records the hit when allowed.
+ */
+export async function takeRateLimit(limits: { key: string; max: number }[], message: string): Promise<string | null> {
+  const since = new Date(Date.now() - WINDOW_MS);
+  const keys = limits.map((l) => l.key);
+  const rows = await db
+    .select({ key: authFailures.key, n: sql<number>`count(*)::int` })
+    .from(authFailures)
+    .where(and(inArray(authFailures.key, keys), gt(authFailures.createdAt, since)))
+    .groupBy(authFailures.key);
+  for (const l of limits) {
+    if ((rows.find((r) => r.key === l.key)?.n ?? 0) >= l.max) return message;
+  }
+  await db.insert(authFailures).values(keys.map((key) => ({ key })));
+  return null;
+}
+
 /** A successful sign-in clears that email's failures (not the IP's). */
 export async function clearLoginFailures(email: string) {
   await db.delete(authFailures).where(eq(authFailures.key, keysFor(email, "").email));

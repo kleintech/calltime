@@ -424,7 +424,7 @@ export async function getProductionAssignments(productionId: string, personIds?:
 /* ───────────────────────── ICS ───────────────────────── */
 
 const icsDate = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-const icsEscape = (s: string) => s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/[,;]/g, (m) => `\\${m}`);
+const icsEscape = (s: string) => s.replace(/\\/g, "\\\\").replace(/\r\n|\r|\n/g, "\\n").replace(/[,;]/g, (m) => `\\${m}`);
 
 /** Fold content lines at 75 octets (RFC 5545), never splitting a multi-byte character. */
 function fold(line: string) {

@@ -18,6 +18,7 @@ import {
   parseForm,
   personName,
   type FormState,
+  dropPersonCallsIfUncast,
 } from "@/lib/production-queries";
 
 const opt = (n: number) =>
@@ -159,9 +160,10 @@ export async function setAssignmentKind(productionId: string, roleId: string, pe
 export async function removeAssignment(productionId: string, roleId: string, personId: string) {
   const { user } = await requireProductionEditor(productionId);
   await getRoleInProduction(productionId, roleId);
-  await mutateCalls(productionId, user.id, (tx) =>
-    tx.delete(roleAssignments).where(and(eq(roleAssignments.roleId, roleId), eq(roleAssignments.personId, personId))),
-  );
+  await mutateCalls(productionId, user.id, async (tx) => {
+    await tx.delete(roleAssignments).where(and(eq(roleAssignments.roleId, roleId), eq(roleAssignments.personId, personId)));
+    await dropPersonCallsIfUncast(tx, productionId, personId);
+  });
   revalidate(productionId);
 }
 
@@ -185,9 +187,15 @@ export async function addRoleToPerson(productionId: string, personId: string, _:
 
 export async function updatePerson(productionId: string, personId: string, _: FormState, fd: FormData): Promise<FormState> {
   return formAction(async () => {
-    const { org } = await requireProductionEditor(productionId);
-    await getPersonInProduction(productionId, org.id, personId);
+    const { org, isOrgAdmin } = await requireProductionEditor(productionId);
+    const person = await getPersonInProduction(productionId, org.id, personId);
     const data = parseForm(newPersonSchema, fd);
+    // The email on file decides who may claim this record via an invite, so an editor can add a
+    // missing email but not replace one; changing it is a company-admin job (Company → People).
+    if (!isOrgAdmin && person.email && data.email && normalizeEmail(data.email) !== normalizeEmail(person.email)) {
+      throw new ActionError(`Only a company admin can change ${personName(person)}'s email.`);
+    }
+    if (!isOrgAdmin && person.email && !data.email) data.email = person.email;
     await db.update(people).set(data).where(eq(people.id, personId));
     revalidate(productionId);
     return { message: "Saved." };

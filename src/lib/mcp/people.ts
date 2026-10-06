@@ -4,25 +4,26 @@ import { z } from "zod";
 import { db } from "@/db";
 import { guardianships, people, roleAssignments, roles } from "@/db/schema";
 import { normalizeEmail } from "@/lib/auth";
+import { dropPersonCallsIfUncast } from "@/lib/production-queries";
 import { loadRoles, requireRoles } from "./production";
 import { type Ctx, type Q, fail, getProduction, loadOrgPeople, matchPerson, norm, personName, resolvePerson, splitName } from "./util";
 
 export const guardianInput = z.object({
-  name: z.string().min(1).describe("Guardian's full name"),
-  email: z.string().email().nullish(),
-  phone: z.string().nullish(),
-  relationship: z.string().nullish().describe("e.g. Mother, Father, Grandparent. Default: Parent"),
+  name: z.string().max(4000).min(1).describe("Guardian's full name"),
+  email: z.string().max(4000).email().nullish(),
+  phone: z.string().max(4000).nullish(),
+  relationship: z.string().max(4000).nullish().describe("e.g. Mother, Father, Grandparent. Default: Parent"),
 });
 
 export const personInput = z.object({
-  name: z.string().optional().describe("Full name (\"Maya Rivera\"). Alternatively give firstName/lastName."),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  email: z.string().email().nullish().describe("With the first name, the matching key: an existing person with this email AND first name is updated instead of duplicated (families may share an email)"),
-  phone: z.string().nullish(),
+  name: z.string().max(4000).optional().describe("Full name (\"Maya Rivera\"). Alternatively give firstName/lastName."),
+  firstName: z.string().max(4000).optional(),
+  lastName: z.string().max(4000).optional(),
+  email: z.string().max(4000).email().nullish().describe("With the first name, the matching key: an existing person with this email AND first name is updated instead of duplicated (families may share an email)"),
+  phone: z.string().max(4000).nullish(),
   isMinor: z.boolean().optional().describe("Under 18. Minors are usually reached through their guardians."),
   birthYear: z.number().int().nullish(),
-  notes: z.string().nullish(),
+  notes: z.string().max(4000).nullish(),
   guardians: z.array(guardianInput).optional().describe("Parents/guardians (each also stored as a person and linked)"),
 });
 export type PersonInput = z.infer<typeof personInput>;
@@ -188,8 +189,8 @@ export async function listPeople(ctx: Ctx, opts: { query?: string; production?: 
 }
 
 export const assignmentInput = z.object({
-  person: z.string().describe("Person id, email, or exact full name"),
-  role: z.string().describe("Role name or id"),
+  person: z.string().max(4000).describe("Person id, email, or exact full name"),
+  role: z.string().max(4000).describe("Role name or id"),
   kind: z
     .enum(["primary", "understudy", "swing"])
     .default("primary")
@@ -229,5 +230,6 @@ export async function unassignRole(ctx: Ctx, productionId: string, personRef: st
     .delete(roleAssignments)
     .where(and(eq(roleAssignments.roleId, role.id), eq(roleAssignments.personId, person.id)))
     .returning();
+  if (del.length) await dropPersonCallsIfUncast(q, productionId, person.id);
   return { removed: del.length > 0, person: personName(person), role: role.name };
 }

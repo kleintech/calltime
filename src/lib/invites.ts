@@ -52,14 +52,23 @@ async function assertMayClaimPerson(grant: InviteGrant & { personId: string }) {
   // Editor of a production where this person (or someone they're guardian of) is cast.
   const wards = await db.select({ id: guardianships.minorId }).from(guardianships).where(eq(guardianships.guardianId, person.id));
   const ids = [person.id, ...wards.map((w) => w.id)];
-  const hit = await db
-    .select({ p: roles.productionId })
+  // Claiming the record grants access to every production the person (and their wards) are in, so
+  // the inviter must be an editor of all of them — otherwise one production's director could reach
+  // another show's call sheets through a family they don't manage.
+  const castIn = await db
+    .selectDistinct({ productionId: roles.productionId })
     .from(roleAssignments)
     .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
-    .innerJoin(creativeTeam, and(eq(creativeTeam.productionId, roles.productionId), eq(creativeTeam.userId, inviter.id), eq(creativeTeam.canEdit, true)))
-    .where(inArray(roleAssignments.personId, ids))
-    .limit(1);
-  if (hit.length === 0) throw new ActionError("You can only invite people cast in a production you manage.");
+    .where(inArray(roleAssignments.personId, ids));
+  if (castIn.length === 0) throw new ActionError("You can only invite people cast in a production you manage.");
+  const editable = await db
+    .select({ productionId: creativeTeam.productionId })
+    .from(creativeTeam)
+    .where(and(eq(creativeTeam.userId, inviter.id), eq(creativeTeam.canEdit, true), inArray(creativeTeam.productionId, castIn.map((c) => c.productionId))));
+  const editableIds = new Set(editable.map((e) => e.productionId));
+  if (!castIn.every((c) => editableIds.has(c.productionId))) {
+    throw new ActionError(`${person.firstName} is also in a production you don't manage, so only a company admin can send this invite.`);
+  }
 }
 
 export async function createInvite(grant: InviteGrant) {

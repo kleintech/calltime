@@ -31,6 +31,18 @@ export async function loadInvite(token: string) {
 export class InviteError extends Error {}
 
 /**
+ * Guardian invites can be accepted by any signed-in account (a shared family device); admin seats,
+ * creative seats and person-record claims are bound to the invited email.
+ */
+export function inviteMayBeAcceptedBy(
+  invite: { email: string; orgRole: string; personId: string | null; creativeTitle: string | null },
+  userEmail: string,
+) {
+  const bound = invite.orgRole === "admin" || !!invite.personId || !!invite.creativeTitle;
+  return !bound || invite.email.toLowerCase() === userEmail.toLowerCase();
+}
+
+/**
  * Accept an invite, atomically:
  *  - as `asUserId` (signed in) or by creating / activating the account for the invite's email
  *  - org membership (never downgrades an admin), creative team seat, person link, guardianship

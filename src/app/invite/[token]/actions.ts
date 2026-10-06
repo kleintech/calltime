@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
 import { invites, users } from "@/db/schema";
-import { createSession, destroySession, getCurrentUser, verifyPassword } from "@/lib/auth";
+import { createSession, destroySession, getCurrentUser, verifyPasswordOrDummy } from "@/lib/auth";
 import { checkLoginRateLimit, clearLoginFailures, recordLoginFailure } from "@/lib/rate-limit";
-import { acceptInvite, InviteError, landingFor } from "./accept";
+import { acceptInvite, InviteError, inviteMayBeAcceptedBy, landingFor } from "./accept";
 
 export type AcceptState = { error?: string };
 
@@ -29,6 +29,14 @@ export async function acceptAsCurrentUser(_: AcceptState, fd: FormData): Promise
   const token = tokenSchema.parse(fd.get("token"));
   const user = await getCurrentUser();
   if (!user) return { error: "You've been signed out. Sign in again to accept." };
+  const invite = await db.query.invites.findFirst({ where: eq(invites.token, token) });
+  if (!invite) return { error: "This invite link isn't valid any more." };
+  // Admin seats and person-record claims are bound to the invited email: whoever holds the link
+  // while signed in as someone else must switch accounts (guardian invites may be accepted by any
+  // signed-in account, e.g. a shared family device).
+  if (!inviteMayBeAcceptedBy(invite, user.email)) {
+    return { error: `This invite was sent to ${invite.email}. Sign in with that account to accept it.` };
+  }
   return run(async () => landingFor((await acceptInvite(token, { asUserId: user.id })).invite));
 }
 
@@ -55,10 +63,13 @@ export async function signInAndAccept(_: AcceptState, fd: FormData): Promise<Acc
   const password = String(fd.get("password") ?? "");
   const invite = await db.query.invites.findFirst({ where: eq(invites.token, token) });
   if (!invite) return { error: "This invite link isn't valid any more." };
+  // Dead links must not stay usable as a password oracle for the invitee's email.
+  if (invite.acceptedAt || invite.expiresAt < new Date()) return { error: "This invite link isn't valid any more." };
   const limited = await checkLoginRateLimit(invite.email);
   if (limited) return { error: limited };
   const user = await db.query.users.findFirst({ where: eq(users.email, invite.email) });
-  if (!user?.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
+  const ok = await verifyPasswordOrDummy(password, user?.passwordHash); // always runs bcrypt
+  if (!user || !ok) {
     await recordLoginFailure(invite.email);
     return { error: "That password isn't right." };
   }

@@ -19,9 +19,9 @@ import { withCallImpact } from "@/lib/changes";
 import { type Ctx, fail, getProduction, isUuid, loadOrgPeople } from "./util";
 
 const castRole = z.union([
-  z.string().describe("Role name"),
+  z.string().max(4000).describe("Role name"),
   z.object({
-    role: z.string(),
+    role: z.string().max(4000),
     kind: z.enum(["primary", "understudy", "swing"]).default("primary"),
   }),
 ]);
@@ -29,7 +29,7 @@ const castRole = z.union([
 export const importInput = z.object({
   production: productionFields
     .extend({
-      id: z.string().optional().describe("Existing production id to merge into. Otherwise matched by exact title, or created."),
+      id: z.string().max(4000).optional().describe("Existing production id to merge into. Otherwise matched by exact title, or created."),
     })
     .describe("The show. Matched by id, then by exact title within the organization; created if absent."),
   roles: z.array(roleInput).default([]).describe("Every character/part, in program order. Ensembles are one role each (\"Pirates\")."),

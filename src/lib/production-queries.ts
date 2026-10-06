@@ -301,11 +301,35 @@ export async function getMaterialsForPeople(productionId: string, personIds: str
 /** Remove schedule calls that point at a deleted scene/role/group (blockCalls has no FK). */
 /** Pass a transaction as `q` to make this atomic with the caller's other deletes (default: `db`). */
 export async function deleteCallsTargeting(
-  target: "scene" | "role" | "group",
+  target: "scene" | "role" | "group" | "person",
   targetId: string,
   q: Pick<typeof db, "delete"> = db,
 ) {
   await q.delete(blockCalls).where(and(eq(blockCalls.target, target), eq(blockCalls.targetId, targetId)));
+}
+
+/**
+ * After removing a role assignment: if the person no longer holds any role in the production, drop
+ * the blocks' individual ("person") calls for them there, so the team's call sheets stop listing
+ * someone families can no longer see, and the change is recorded as "No longer called".
+ * Run inside the same transaction as the unassignment (withCallImpact / mutateCalls).
+ */
+export async function dropPersonCallsIfUncast(q: Pick<typeof db, "select" | "delete">, productionId: string, personId: string) {
+  const still = await q
+    .select({ id: roleAssignments.roleId })
+    .from(roleAssignments)
+    .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
+    .where(and(eq(roles.productionId, productionId), eq(roleAssignments.personId, personId)))
+    .limit(1);
+  if (still.length) return;
+  const blockIds = q
+    .select({ id: eventBlocks.id })
+    .from(eventBlocks)
+    .innerJoin(events, eq(events.id, eventBlocks.eventId))
+    .where(eq(events.productionId, productionId));
+  await q
+    .delete(blockCalls)
+    .where(and(eq(blockCalls.target, "person"), eq(blockCalls.targetId, personId), inArray(blockCalls.blockId, blockIds)));
 }
 
 /* ───────────────────────── Call-impact wrapper ───────────────────────── */

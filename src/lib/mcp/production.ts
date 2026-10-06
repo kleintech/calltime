@@ -22,48 +22,48 @@ import { type Ctx, type Q, fail, isUuid, listForError, norm, personName, getProd
 
 /* ───────────────────────── Schemas ───────────────────────── */
 
-const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD");
+const dateStr = z.string().max(4000).regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD");
 
 export const productionFields = z.object({
-  title: z.string().min(1).describe("Show title, e.g. \"The Pirates of Penzance\""),
-  subtitle: z.string().nullish().describe("e.g. \"Fall Musical 2026\""),
-  description: z.string().nullish(),
-  venue: z.string().nullish().describe("Performance venue"),
-  defaultLocation: z.string().nullish().describe("Default rehearsal location; new events use it when none is given"),
+  title: z.string().max(4000).min(1).describe("Show title, e.g. \"The Pirates of Penzance\""),
+  subtitle: z.string().max(4000).nullish().describe("e.g. \"Fall Musical 2026\""),
+  description: z.string().max(4000).nullish(),
+  venue: z.string().max(4000).nullish().describe("Performance venue"),
+  defaultLocation: z.string().max(4000).nullish().describe("Default rehearsal location; new events use it when none is given"),
   status: z.enum(["planning", "auditions", "rehearsals", "performances", "closed"]).optional(),
   firstRehearsal: dateStr.nullish(),
   openingDate: dateStr.nullish(),
   closingDate: dateStr.nullish(),
-  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Hex color like #7c3aed"),
+  accentColor: z.string().max(4000).regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Hex color like #7c3aed"),
 });
 export type ProductionFields = z.infer<typeof productionFields>;
 
 export const roleInput = z.object({
-  name: z.string().min(1).describe("Character name exactly as it should appear, e.g. \"Mabel\" or \"Pirates (ensemble)\""),
-  newName: z.string().min(1).optional().describe("Rename an existing role (matched by `name`) to this"),
+  name: z.string().max(4000).min(1).describe("Character name exactly as it should appear, e.g. \"Mabel\" or \"Pirates (ensemble)\""),
+  newName: z.string().max(4000).min(1).optional().describe("Rename an existing role (matched by `name`) to this"),
   kind: z.enum(["lead", "supporting", "featured", "ensemble"]).optional().describe("Default: supporting"),
-  description: z.string().nullish().describe("Short character description, vocal range, age range…"),
+  description: z.string().max(4000).nullish().describe("Short character description, vocal range, age range…"),
   sortOrder: z.number().int().optional().describe("Display order; defaults to the order given"),
 });
 export type RoleInput = z.infer<typeof roleInput>;
 
 export const groupInput = z.object({
-  name: z.string().min(1).describe("Group name, e.g. \"Pirates\", \"Daughters\", \"Dance Ensemble\""),
-  roles: z.array(z.string()).describe("Role names (or ids) in the group. Replaces the group's membership."),
-  color: z.string().nullish(),
+  name: z.string().max(4000).min(1).describe("Group name, e.g. \"Pirates\", \"Daughters\", \"Dance Ensemble\""),
+  roles: z.array(z.string().max(4000)).describe("Role names (or ids) in the group. Replaces the group's membership."),
+  color: z.string().max(4000).nullish(),
 });
 export type GroupInput = z.infer<typeof groupInput>;
 
 export const sceneInput = z.object({
   act: z.number().int().min(0).default(1).describe("Act number (default 1)"),
-  number: z.string().min(1).describe("Scene number within the act as text: \"1\", \"3A\", \"Prologue\", \"Finale\""),
-  name: z.string().min(1).describe("Scene name / location / main song, e.g. \"A Rocky Seashore\""),
-  description: z.string().nullish(),
-  songs: z.string().nullish().describe("Songs in the scene, comma separated"),
-  pages: z.string().nullish().describe("Script pages, e.g. \"12-18\""),
+  number: z.string().max(4000).min(1).describe("Scene number within the act as text: \"1\", \"3A\", \"Prologue\", \"Finale\""),
+  name: z.string().max(4000).min(1).describe("Scene name / location / main song, e.g. \"A Rocky Seashore\""),
+  description: z.string().max(4000).nullish(),
+  songs: z.string().max(4000).nullish().describe("Songs in the scene, comma separated"),
+  pages: z.string().max(4000).nullish().describe("Script pages, e.g. \"12-18\""),
   sortOrder: z.number().int().optional().describe("Running order; defaults to act/number order as given"),
   roles: z
-    .array(z.string())
+    .array(z.string().max(4000))
     .optional()
     .describe("Role names (or ids) that appear in the scene. When given, REPLACES the scene's role list."),
 });

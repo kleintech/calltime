@@ -91,7 +91,7 @@ export function registerCalltimeTools(server: McpServer) {
     for (const c of changes) scheduleChangeNotification(c);
     return { result, publishedEventsAffected: changes.length };
   };
-  const production = z.string().describe("Production id or exact title");
+  const production = z.string().max(4000).describe("Production id or exact title");
 
   /* Guidance */
   tool("how_to_import_a_script", "Step-by-step guidance for turning a script and cast list into a Calltime production. Read this first when setting up a show.", z.object({}), async () => ({ guide: GUIDE }), RO);
@@ -134,7 +134,7 @@ export function registerCalltimeTools(server: McpServer) {
   tool(
     "delete_role",
     "Delete a role. Also removes it from scenes and groups and unassigns everyone who played it.",
-    z.object({ production, role: z.string().describe("Role name or id") }),
+    z.object({ production, role: z.string().max(4000).describe("Role name or id") }),
     async (a, c) => {
       const p = await getProduction(c, a.production);
       const { result, publishedEventsAffected } = await withImpact(p.id, c.userId, (tx) => deleteRole(p.id, a.role, tx));
@@ -169,8 +169,8 @@ export function registerCalltimeTools(server: McpServer) {
     "Change which roles appear in one scene. mode: replace (default), add, or remove.",
     z.object({
       production,
-      scene: z.string().describe("Scene id, name, or \"Act 1 Sc 3\""),
-      roles: z.array(z.string()).describe("Role names or ids"),
+      scene: z.string().max(4000).describe("Scene id, name, or \"Act 1 Sc 3\""),
+      roles: z.array(z.string().max(4000)).describe("Role names or ids"),
       mode: z.enum(["replace", "add", "remove"]).default("replace"),
     }),
     async (a, c) => {
@@ -188,7 +188,7 @@ export function registerCalltimeTools(server: McpServer) {
     "List people in the organization (performers and guardians). Filter by production (only its cast, with their roles) and/or a name/email substring.",
     z.object({
       production: production.optional(),
-      query: z.string().optional().describe("Substring of name or email"),
+      query: z.string().max(4000).optional().describe("Substring of name or email"),
       limit: z.number().int().min(1).max(500).default(200),
     }),
     (a, c) => listPeople(c, a),
@@ -215,7 +215,7 @@ export function registerCalltimeTools(server: McpServer) {
   tool(
     "unassign_role",
     "Remove one person from one role.",
-    z.object({ production, person: z.string(), role: z.string() }),
+    z.object({ production, person: z.string().max(4000), role: z.string().max(4000) }),
     async (a, c) => {
       const p = await getProduction(c, a.production);
       const { result, publishedEventsAffected } = await withImpact(p.id, c.userId, (tx) => unassignRole(c, p.id, a.person, a.role, tx));
@@ -240,8 +240,8 @@ export function registerCalltimeTools(server: McpServer) {
     "List a production's events (rehearsals, performances…) with blocks, what each block calls, and how many people are called. Includes drafts by default. Times are org-local.",
     z.object({
       production,
-      from: z.string().optional().describe("Start of range (date or date-time, org-local). Default: no limit"),
-      to: z.string().optional(),
+      from: z.string().max(4000).optional().describe("Start of range (date or date-time, org-local). Default: no limit"),
+      to: z.string().max(4000).optional(),
       includeDrafts: z.boolean().default(true),
       status: z.enum(["draft", "published", "cancelled"]).optional(),
     }),
@@ -253,12 +253,12 @@ export function registerCalltimeTools(server: McpServer) {
     "Schedule an event (rehearsal, performance, tech, …) made of timed blocks. Each block calls scenes/roles/groups/people/all_cast; every person's call time is computed from the blocks (earliest start → latest end of the blocks that call them). Event start/end default to the span of the blocks; location defaults to the production's default location. Created as a DRAFT (invisible to cast) unless publish is true.",
     z.object({
       production,
-      title: z.string().min(1).describe("e.g. \"Rehearsal\", \"Act 1 blocking\", \"Opening night\""),
+      title: z.string().max(4000).min(1).describe("e.g. \"Rehearsal\", \"Act 1 blocking\", \"Opening night\""),
       kind: z.enum(eventKinds).default("rehearsal"),
-      start: z.string().optional().describe("Org-local \"YYYY-MM-DDTHH:mm\" or ISO with offset. Defaults to first block start"),
-      end: z.string().optional(),
-      location: z.string().nullish(),
-      notes: z.string().nullish().describe("Shown to everyone called"),
+      start: z.string().max(4000).optional().describe("Org-local \"YYYY-MM-DDTHH:mm\" or ISO with offset. Defaults to first block start"),
+      end: z.string().max(4000).optional(),
+      location: z.string().max(4000).nullish(),
+      notes: z.string().max(4000).nullish().describe("Shown to everyone called"),
       publish: z.boolean().default(false),
       blocks: z.array(blockInput).min(1),
     }),
@@ -268,13 +268,13 @@ export function registerCalltimeTools(server: McpServer) {
     "update_event",
     "Edit an event. Only given fields change; `blocks`, when given, REPLACES all blocks. For published events a material change (time, location, kind, blocks) bumps the revision so families' calendars update and see an \"Updated\" badge.",
     z.object({
-      event: z.string().describe("Event id"),
-      title: z.string().optional(),
+      event: z.string().max(4000).describe("Event id"),
+      title: z.string().max(4000).optional(),
       kind: z.enum(eventKinds).optional(),
-      start: z.string().optional(),
-      end: z.string().optional(),
-      location: z.string().nullish(),
-      notes: z.string().nullish(),
+      start: z.string().max(4000).optional(),
+      end: z.string().max(4000).optional(),
+      location: z.string().max(4000).nullish(),
+      notes: z.string().max(4000).nullish(),
       blocks: z.array(blockInput).min(1).optional(),
       changeNote: z
         .string()
@@ -288,10 +288,10 @@ export function registerCalltimeTools(server: McpServer) {
     "publish_events",
     "Publish draft events so the cast and guardians see their calls (and calendar feeds update). Pass event ids, or a production to publish all its drafts (optionally only those starting within from/to). Publishing a cancelled event reinstates it.",
     z.object({
-      events: z.array(z.string()).optional().describe("Event ids"),
+      events: z.array(z.string().max(4000)).optional().describe("Event ids"),
       production: production.optional(),
-      from: z.string().optional(),
-      to: z.string().optional(),
+      from: z.string().max(4000).optional(),
+      to: z.string().max(4000).optional(),
     }),
     async (a, c) => {
       const { afterCommit, ...result } = await db.transaction((tx) => publishEvents(c, a, tx));
@@ -302,20 +302,20 @@ export function registerCalltimeTools(server: McpServer) {
   tool(
     "cancel_event",
     "Cancel an event. Cast still see it, marked cancelled (and calendars show it cancelled). Prefer this over delete_event for anything already published.",
-    z.object({ event: z.string(), reason: z.string().optional().describe("Shown to families") }),
+    z.object({ event: z.string().max(4000), reason: z.string().max(4000).optional().describe("Shown to families") }),
     (a, c) => cancelEvent(c, a.event, a.reason),
   );
   tool(
     "delete_event",
     "Permanently delete an event (use for drafts or mistakes; use cancel_event for published events people may have planned around).",
-    z.object({ event: z.string() }),
+    z.object({ event: z.string().max(4000) }),
     (a, c) => deleteEvent(c, a.event),
     { destructiveHint: true },
   );
   tool(
     "get_call_sheet",
     "Who is called to an event and when: each person's call and release time and what they're rehearsing, plus the block schedule. Works for drafts too — use it to check a schedule before publishing.",
-    z.object({ event: z.string() }),
+    z.object({ event: z.string().max(4000) }),
     (a, c) => callSheet(c, a.event),
     RO,
   );
@@ -323,9 +323,9 @@ export function registerCalltimeTools(server: McpServer) {
     "get_person_schedule",
     "One person's upcoming calls across productions (published + cancelled; drafts optional).",
     z.object({
-      person: z.string().describe("Person id, email or exact full name"),
-      from: z.string().optional().describe("Default: now"),
-      to: z.string().optional(),
+      person: z.string().max(4000).describe("Person id, email or exact full name"),
+      from: z.string().max(4000).optional().describe("Default: now"),
+      to: z.string().max(4000).optional(),
       includeDrafts: z.boolean().default(false),
     }),
     (a, c) => personSchedule(c, a),
@@ -334,7 +334,7 @@ export function registerCalltimeTools(server: McpServer) {
   tool(
     "list_conflicts",
     "Cast members' reported unavailability for a production, each with the scheduled calls (drafts included) it collides with. Check before publishing.",
-    z.object({ production, from: z.string().optional().describe("Default: now"), to: z.string().optional() }),
+    z.object({ production, from: z.string().max(4000).optional().describe("Default: now"), to: z.string().max(4000).optional() }),
     (a, c) => listConflicts(c, a),
     RO,
   );
@@ -350,7 +350,7 @@ export function registerCalltimeTools(server: McpServer) {
   tool(
     "list_audition_signups",
     "Signups for one audition with contact info, interests, ratings and status.",
-    z.object({ audition: z.string().describe("Audition id"), status: z.enum(SIGNUP_STATUSES).optional() }),
+    z.object({ audition: z.string().max(4000).describe("Audition id"), status: z.enum(SIGNUP_STATUSES).optional() }),
     (a, c) => listSignups(c, a.audition, a.status),
     RO,
   );
@@ -358,10 +358,10 @@ export function registerCalltimeTools(server: McpServer) {
     "set_signup_status",
     "Move audition signups through registered → checked_in → auditioned → callback → cast | not_cast | withdrawn. Optionally set a 1–5 rating and staff notes. Setting \"cast\" does not create cast assignments by itself.",
     z.object({
-      signups: z.array(z.string()).min(1).describe("Signup ids"),
+      signups: z.array(z.string().max(4000)).min(1).describe("Signup ids"),
       status: z.enum(SIGNUP_STATUSES),
       rating: z.number().int().min(1).max(5).optional(),
-      staffNotes: z.string().optional(),
+      staffNotes: z.string().max(4000).optional(),
     }),
     (a, c) => setSignupStatus(c, a),
   );

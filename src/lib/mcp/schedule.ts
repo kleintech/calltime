@@ -49,10 +49,10 @@ export const callInput = z.object({
 export const blockInput = z.object({
   start: timeArg,
   end: timeArg,
-  title: z.string().nullish().describe("Optional label, e.g. \"Choreography: Act 1 finale\". Defaults to what's called."),
-  leader: z.string().nullish().describe("Who runs this block, e.g. \"Choreographer\", \"Music Director\""),
-  location: z.string().nullish().describe("Room, if different from the event location"),
-  notes: z.string().nullish(),
+  title: z.string().max(4000).nullish().describe("Optional label, e.g. \"Choreography: Act 1 finale\". Defaults to what's called."),
+  leader: z.string().max(4000).nullish().describe("Who runs this block, e.g. \"Choreographer\", \"Music Director\""),
+  location: z.string().max(4000).nullish().describe("Room, if different from the event location"),
+  notes: z.string().max(4000).nullish(),
   calls: z.array(callInput).min(1).describe("Who is called to this block"),
 });
 export type BlockInput = z.infer<typeof blockInput>;

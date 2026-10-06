@@ -56,7 +56,7 @@ export const getCoveredPersonIds = cache(async (userId: string): Promise<string[
 /** Resolve access to a production for a user, or null if they have none. */
 export const getProductionAccess = cache(
   async (user: SessionUser, productionId: string): Promise<ProductionAccess | null> => {
-    if (!/^[0-9a-f-]{36}$/i.test(productionId)) return null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productionId)) return null;
     const production = await db.query.productions.findFirst({ where: eq(productions.id, productionId) });
     if (!production) return null;
     const org = await db.query.organizations.findFirst({ where: eq(organizations.id, production.orgId) });

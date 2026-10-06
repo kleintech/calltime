@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { createSession, normalizeEmail, safeNextPath, verifyPassword } from "@/lib/auth";
+import { createSession, normalizeEmail, safeNextPath, verifyPasswordOrDummy } from "@/lib/auth";
 import { checkLoginRateLimit, clearLoginFailures, recordLoginFailure } from "@/lib/rate-limit";
 
 export type LoginState = { error?: string };
@@ -16,7 +16,8 @@ export async function login(_: LoginState, formData: FormData): Promise<LoginSta
   const limited = await checkLoginRateLimit(email);
   if (limited) return { error: limited };
   const user = await db.query.users.findFirst({ where: eq(users.email, email) });
-  if (!user?.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
+  const ok = await verifyPasswordOrDummy(password, user?.passwordHash); // always runs bcrypt
+  if (!user || !ok) {
     await recordLoginFailure(email);
     return { error: "That email and password don't match." };
   }

@@ -29,8 +29,28 @@ export async function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
-/** Creates a session row and sets the cookie. Call from a Server Action or Route Handler. */
+// Compared against when the account doesn't exist (or has no password yet), so a wrong email
+// takes as long as a wrong password and the response time doesn't reveal which emails have accounts.
+const DUMMY_HASH = bcrypt.hashSync(randomToken(16), 10);
+
+/** verifyPassword that always runs bcrypt, even when there is no hash to check against. */
+export async function verifyPasswordOrDummy(password: string, hash: string | null | undefined) {
+  if (!hash) {
+    await bcrypt.compare(password, DUMMY_HASH);
+    return false;
+  }
+  return bcrypt.compare(password, hash);
+}
+
+/**
+ * Creates a session row and sets the cookie. Call from a Server Action or Route Handler.
+ * Any session already in the cookie is revoked first, so signing in never leaves a stale
+ * 60-day session alive for a previous account on the same device.
+ */
 export async function createSession(userId: string) {
+  const store = await cookies();
+  const previous = store.get(SESSION_COOKIE)?.value;
+  if (previous) await db.delete(sessions).where(eq(sessions.id, sha256(previous)));
   const token = randomToken(32);
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400_000);
   await db.insert(sessions).values({ id: sha256(token), userId, expiresAt });

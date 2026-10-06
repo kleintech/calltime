@@ -7,7 +7,7 @@ import { fmtHours, getShiftsWithSignups, shiftMinutes } from "@/lib/volunteers";
 const cell = (v: string | number | null | undefined) => {
   const s = String(v ?? "");
   // Quote always; neutralise spreadsheet formula injection.
-  return `"${(/^[=+\-@]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`;
+  return `"${(/^[=+\-@\t\r]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`;
 };
 
 /** Volunteer roster as CSV (editors only). */

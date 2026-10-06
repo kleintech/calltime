@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Card, LinkButton, buttonClass } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth";
-import { loadInvite } from "./accept";
+import { inviteMayBeAcceptedBy, loadInvite } from "./accept";
 import { signOutToInvite } from "./actions";
 import { AcceptForm, CreateAccountForm, SignInAcceptForm } from "./forms";
 
@@ -158,7 +158,11 @@ export default async function InvitePage({ params }: PageProps<"/invite/[token]"
                   <span className="text-muted">({user.email})</span>, but this invite was sent to{" "}
                   <span className="font-semibold">{invite.email}</span>.
                 </p>
-                <AcceptForm token={token} cta={`Accept as ${user.name.split(" ")[0]}`} />
+                {inviteMayBeAcceptedBy(invite, user.email) ? (
+                  <AcceptForm token={token} cta={`Accept as ${user.name.split(" ")[0]}`} />
+                ) : (
+                  <p className="text-sm text-muted">Switch to the account for {invite.email} to accept it.</p>
+                )}
                 <form action={signOutToInvite}>
                   <input type="hidden" name="token" value={token} />
                   <button type="submit" className={buttonClass("secondary", "w-full")}>

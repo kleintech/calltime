@@ -8,6 +8,20 @@ const nextConfig: NextConfig = {
    * connections — which left connections stuck mid-transaction and lost writes.
    */
   serverExternalPackages: ["@neondatabase/serverless", "drizzle-orm", "ws"],
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // Several pages carry a secret in the URL (invite, audition manage, calendar feed); never leak it via Referer.
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

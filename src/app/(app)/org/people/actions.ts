@@ -9,7 +9,7 @@ import { guardianships, people } from "@/db/schema";
 import { requireOrgAdmin } from "@/lib/access";
 import { normalizeEmail } from "@/lib/auth";
 import { createInvite } from "@/lib/invites";
-import { ActionError } from "@/lib/production-queries";
+import { ActionError, deleteCallsTargeting } from "@/lib/production-queries";
 import { firstIssue, type FormState } from "../_components/form-state";
 import { messageForInvite, personName, splitName } from "../_lib/org";
 
@@ -101,7 +101,10 @@ export async function updatePerson(_: FormState, fd: FormData): Promise<FormStat
 
 export async function deletePerson(fd: FormData) {
   const { person } = await authorizePerson(fd.get("personId"));
-  await db.delete(people).where(eq(people.id, person.id));
+  await db.transaction(async (tx) => {
+    await deleteCallsTargeting("person", person.id, tx);
+    await tx.delete(people).where(eq(people.id, person.id));
+  });
   revalidatePeople();
   redirect(`/org/people?org=${person.orgId}`);
 }
