@@ -51,7 +51,13 @@ async function main() {
   };
 
   /* Users */
-  const admin = await mkUser("admin@calltime.dev", "Platform Admin", { isPlatformAdmin: true });
+  // The platform admin never gets the public demo password: this repo is public, and a platform admin
+  // can read every tenant. Set SEED_ADMIN_PASSWORD in .env.local, or a random one is generated and printed.
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || tok(12);
+  const admin = await mkUser("admin@calltime.dev", "Platform Admin", {
+    isPlatformAdmin: true,
+    passwordHash: await bcrypt.hash(adminPassword, 10),
+  });
   const orgAdmin = await mkUser("office@riverside.dev", "Pat Okafor");
   const director = await mkUser("director@riverside.dev", "Jordan Ellis");
   const choreo = await mkUser("choreo@riverside.dev", "Alex Moreau");
@@ -835,7 +841,8 @@ async function main() {
 
   console.log("Seeded.");
   console.log("Demo logins (password: calltime):");
-  for (const u of [admin, orgAdmin, director, choreo, musicDir, sm, parentDana, parentMarcus, teenSam]) console.log(`  ${u.email.padEnd(26)} ${u.name}`);
+  for (const u of [orgAdmin, director, choreo, musicDir, sm, parentDana, parentMarcus, teenSam]) console.log(`  ${u.email.padEnd(26)} ${u.name}`);
+  console.log(`Platform admin: admin@calltime.dev (password ${process.env.SEED_ADMIN_PASSWORD ? "from SEED_ADMIN_PASSWORD" : adminPassword})`);
   console.log(`Pirates production id: ${pirates.id}`);
   console.log(`MCP API key (org admin): ${key}`);
   process.exit(0);
