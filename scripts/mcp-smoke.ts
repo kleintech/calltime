@@ -412,7 +412,51 @@ async function main() {
     await call("delete_role", { production: prodId, role: "Phantom" });
     const ev4Calls = ((await call("list_events", { production: prodId })).events as Json[]).find((e) => e.id === ev4.id)!;
     assert.deepEqual((ev4Calls.blocks as Json[])[0].calls, ["Full cast"], JSON.stringify(ev4Calls));
-    console.log("ok - review regressions (rename, bad times, scene refs, no-op blocks, reinstate notes, namesakes)");
+    // B1: siblings sharing a parent's email stay separate; the parent isn't merged into a kid; re-runs are stable.
+    const fam = `fam@${EMAIL_DOMAIN}`;
+    const sibs = {
+      people: [
+        { name: `Maya Sib${TAG}`, email: fam, isMinor: true, guardians: [{ name: `Dana Sib${TAG}`, email: fam }] },
+        { name: `Leo Sib${TAG}`, email: fam, isMinor: true, guardians: [{ name: `Dana Sib${TAG}`, email: fam }] },
+      ],
+    };
+    const sib1 = (await call("upsert_people", sibs)).people as Json[];
+    assert.notEqual(sib1[0].id, sib1[1].id, "siblings sharing an email collapsed into one person");
+    assert.equal(sib1[0].name, `Maya Sib${TAG}`);
+    assert.equal(sib1[1].name, `Leo Sib${TAG}`);
+    const g0 = (sib1[0].guardians as Json[])[0];
+    assert.equal((sib1[1].guardians as Json[])[0].id, g0.id, "parent duplicated");
+    assert.ok(g0.id !== sib1[0].id && g0.id !== sib1[1].id, "parent merged into a kid");
+    const sib2 = (await call("upsert_people", sibs)).people as Json[];
+    assert.deepEqual(sib2.map((x) => [x.id, x.name, x.created]), sib1.map((x) => [x.id, x.name, false]), "re-run changed siblings");
+
+    // B2: scenes that share a name stay separate and keep their numbers on re-run.
+    const twin = { production: prodId, scenes: [
+      { act: 2, number: "1", name: "A Rocky Seashore" },
+      { act: 2, number: "3", name: "A Rocky Seashore" },
+    ] };
+    const tw1 = (await call("upsert_scenes", twin)).scenes as Json[];
+    assert.equal(new Set(tw1.map((x) => x.id)).size, 2, "same-name scenes merged");
+    const tw2 = (await call("upsert_scenes", twin)).scenes as Json[];
+    assert.deepEqual(tw2.map((x) => [x.id, x.label, x.created]), tw1.map((x) => [x.id, x.label, false]), "same-name scene re-run not idempotent");
+
+    // B3: casting someone into a role called at an upcoming published event records a change for them.
+    const ev3Before = (await call("list_events", { production: prodId })).events as Json[];
+    const ev3Rev = ev3Before.find((e) => e.id === ev3.id)!.revision as number;
+    const cast = await call("assign_roles", { production: prodId, assignments: [{ person: sib1[0].id as string, role: "Keeper" }] });
+    assert.equal(cast.publishedEventsAffected, 1, JSON.stringify(cast));
+    const ev3After = ((await call("list_events", { production: prodId })).events as Json[]).find((e) => e.id === ev3.id)!;
+    assert.equal(ev3After.revision, ev3Rev + 1, "cast change didn't bump the published event's revision");
+    const castChange = (await db.select().from(eventChanges).where(eq(eventChanges.eventId, ev3.id as string))).sort((x, y) => y.revision - x.revision)[0];
+    assert.deepEqual(castChange.affectedPersonIds, [sib1[0].id], JSON.stringify(castChange));
+    assert.match(castChange.personSummaries[sib1[0].id as string], /^Now called/);
+
+    // S2: a never-published draft can't be cancelled (that would show it to families).
+    const draftOnly = await call("create_event", { production: prodId, title: "Never published", blocks: [{ start: `${day}T07:00`, end: `${day}T08:00`, calls: [{ type: "all_cast" }] }] });
+    assert.ok(await isErr("cancel_event", { event: draftOnly.id as string }), "cancelled a never-published draft");
+    await call("delete_event", { event: draftOnly.id });
+
+    console.log("ok - review regressions (rename, bad times, scene refs, no-op blocks, reinstate notes, namesakes, shared-email siblings, same-name scenes, cast→call changes, draft cancel)");
 
     /* Errors are reported, not thrown */
     const bad = (await client.callTool({ name: "get_production", arguments: { production: "No Such Show xyz" } })) as { isError?: boolean };

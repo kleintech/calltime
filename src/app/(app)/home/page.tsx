@@ -9,7 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { getCallsForPeople, type PersonCall } from "@/lib/calls";
 import { getUnacknowledgedChanges } from "@/lib/changes";
 import { getUnreadNoteCount } from "@/lib/notes";
-import { mapsUrl, personColor } from "@/lib/schedule-shared";
+import { addLocalDays, mapsUrl, personColor } from "@/lib/schedule-shared";
 import { dayKey, fmtDay, fmtDayLong, fmtRange, fmtTime, toDateInput, toTimeInput } from "@/lib/time";
 import { weekKey } from "@/lib/schedule-shared";
 import { GotItButton } from "./_components/got-it";
@@ -119,7 +119,7 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
     const k = dayKey(d, tz);
     const short = fmtDay(d, tz).replace(/^\w+, /, "");
     if (k === dayKey(now, tz)) return `Today · ${short}`;
-    if (k === dayKey(new Date(now.getTime() + 86400_000), tz)) return `Tomorrow · ${short}`;
+    if (k === dayKey(addLocalDays(now, 1, tz), tz)) return `Tomorrow · ${short}`;
     return fmtDay(d, tz);
   };
 

@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "@/db";
+import { scheduleChangeNotification, withCallImpact } from "@/lib/changes";
 import {
   blockCalls,
   eventBlocks,
@@ -306,3 +307,24 @@ export async function deleteCallsTargeting(
 ) {
   await q.delete(blockCalls).where(and(eq(blockCalls.target, target), eq(blockCalls.targetId, targetId)));
 }
+
+/* ───────────────────────── Call-impact wrapper ───────────────────────── */
+
+type ImpactTx = Parameters<Parameters<typeof withCallImpact>[3]>[0];
+
+/**
+ * Run a mutation that can change who is called (cast, breakdown, groups, deletes) in a transaction
+ * that records per-person changes at upcoming published events, then queue family notifications
+ * after commit. Everything inside `fn` must use the `tx` it receives. Returns how many people's
+ * calls changed so the UI can say so.
+ */
+export async function mutateCalls<T>(productionId: string, userId: string, fn: (tx: ImpactTx) => Promise<T>) {
+  const { result, changes } = await db.transaction((tx) => withCallImpact(tx, productionId, userId, fn));
+  for (const c of changes) scheduleChangeNotification(c);
+  const affected = new Set(changes.flatMap((c) => c.affectedPersonIds)).size;
+  return { result, changes, affected };
+}
+
+/** " Calls updated for 3 people at upcoming rehearsals." or "" */
+export const impactNote = (affected: number) =>
+  affected ? ` Calls updated for ${affected} ${affected === 1 ? "person" : "people"} at upcoming rehearsals; their families were notified.` : "";

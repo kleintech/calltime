@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, ne } from "drizzle-orm";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -68,7 +68,8 @@ export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) {
     const path = (await headers()).get("x-pathname");
-    redirect(path && path.startsWith("/") && !path.startsWith("//") && path !== "/" ? `/login?next=${encodeURIComponent(path)}` : "/login");
+    const safe = safeNextPath(path);
+    redirect(safe && safe !== "/" ? `/login?next=${encodeURIComponent(safe)}` : "/login");
   }
   return user;
 }
@@ -77,6 +78,31 @@ export async function requirePlatformAdmin(): Promise<SessionUser> {
   const user = await requireUser();
   if (!user.isPlatformAdmin) redirect("/home");
   return user;
+}
+
+/**
+ * A same-origin path to send the user to after sign-in, or null. Rejects absolute and
+ * protocol-relative URLs, backslash tricks ("/\\evil.com"), control characters and anything that
+ * resolves to another host.
+ */
+export function safeNextPath(next: unknown): string | null {
+  if (typeof next !== "string" || next.length === 0 || next.length > 2000) return null;
+  if (!next.startsWith("/") || next.startsWith("//")) return null;
+  if (/[\\\u0000-\u001f\u007f]/.test(next)) return null;
+  try {
+    const u = new URL(next, "http://x");
+    if (u.host !== "x" || u.protocol !== "http:" || !u.pathname.startsWith("/")) return null;
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return null;
+  }
+}
+
+/** Sign out every other session of this user (e.g. after a password change). */
+export async function revokeOtherSessions(userId: string) {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const keep = token ? sha256(token) : "";
+  await db.delete(sessions).where(and(eq(sessions.userId, userId), ne(sessions.id, keep)));
 }
 
 export function normalizeEmail(email: string) {

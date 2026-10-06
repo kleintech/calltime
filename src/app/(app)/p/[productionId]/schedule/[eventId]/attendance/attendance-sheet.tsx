@@ -19,6 +19,8 @@ export type AttendancePerson = {
   reasons: string[];
   status: Status | null;
   note: string | null;
+  /** Overlapping conflict they reported (shown as a hint; auto-excused only on first open). */
+  conflict: string | null;
   checkedInAt: string | null;
   checkedOutAt: string | null;
   pickedUpBy: string | null;
@@ -177,7 +179,11 @@ export function AttendanceSheet({
                   <Badge>Excused</Badge>
                 ) : null}
               </div>
-              {p.status === "excused" && p.note ? <p className="mt-1 text-xs text-muted">{p.note}</p> : null}
+              {p.status === "excused" && p.note ? (
+                <p className="mt-1 text-xs text-muted">{p.note}</p>
+              ) : p.conflict && p.status !== "excused" ? (
+                <p className="mt-1 text-xs text-warn">{p.conflict}</p>
+              ) : null}
               <div className="mt-2 grid grid-cols-3 gap-1.5" role="group" aria-label={`Attendance for ${p.name}`}>
                 {BUTTONS.map((b) => {
                   const on = p.status === b.status;

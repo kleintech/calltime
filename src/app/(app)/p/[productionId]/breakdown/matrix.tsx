@@ -1,9 +1,9 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Notice, cn } from "@/components/ui";
-import { toggleSceneRole } from "./actions";
+import { applyBreakdownChanges } from "./actions";
 
 type Scene = { id: string; act: number; number: string; name: string };
 type Role = { id: string; name: string; kind: string; castCount: number };
@@ -35,7 +35,63 @@ export function BreakdownMatrix({
   // "auto" = by scene on phones, grid from md up (CSS decides, so no hydration flash).
   const [view, setView] = useState<"auto" | "grid" | "scene">("auto");
   const [sceneIdx, setSceneIdx] = useState(0);
-  const [, startTransition] = useTransition();
+
+  // Taps update the grid instantly; saves are batched (debounced) so a burst of taps becomes one
+  // transaction and families get one change per affected rehearsal, not one per tap.
+  const saved = useRef(new Set(initial)); // what the server has
+  const pending = useRef(new Map<string, boolean>()); // key → desired state, not yet sent
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlight = useRef<Promise<void>>(Promise.resolve());
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const flush = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const batch = [...pending.current].filter(([k, on]) => saved.current.has(k) !== on);
+    pending.current.clear();
+    if (!batch.length) return;
+    setSaving(true);
+    inFlight.current = inFlight.current.then(async () => {
+      let failed: string | null = null;
+      try {
+        const res = await applyBreakdownChanges(
+          productionId,
+          batch.map(([k, on]) => {
+            const [sceneId, roleId] = k.split(":");
+            return { sceneId, roleId, on };
+          }),
+        );
+        if (res.ok) {
+          for (const [k, on] of batch) {
+            if (on) saved.current.add(k);
+            else saved.current.delete(k);
+          }
+          if (res.affected)
+            setNotice(`Calls updated for ${res.affected} ${res.affected === 1 ? "person" : "people"} at upcoming rehearsals; their families were notified.`);
+        } else failed = res.error;
+      } catch {
+        failed = "Couldn't save those changes. Check your connection and try again.";
+      }
+      if (failed) {
+        setError(failed);
+        // Roll the failed cells back to what the server has (unless re-toggled since).
+        setCells((prev) => {
+          const next = new Set(prev);
+          for (const [k] of batch) {
+            if (pending.current.has(k)) continue;
+            if (saved.current.has(k)) next.add(k);
+            else next.delete(k);
+          }
+          return next;
+        });
+      }
+      if (!pending.current.size) setSaving(false);
+    });
+  }, [productionId]);
+
+  // Save anything still queued when leaving the page.
+  useEffect(() => () => flush(), [flush]);
 
   const toggle = (sceneId: string, roleId: string) => {
     const k = key(sceneId, roleId);
@@ -47,24 +103,10 @@ export function BreakdownMatrix({
       return next;
     });
     setError(null);
-    startTransition(async () => {
-      let failed: string | null = null;
-      try {
-        const res = await toggleSceneRole(productionId, sceneId, roleId, on);
-        if (!res.ok) failed = res.error;
-      } catch {
-        failed = "Couldn't save that change. Check your connection and try again.";
-      }
-      if (failed) {
-        setError(failed);
-        setCells((prev) => {
-          const next = new Set(prev);
-          if (on) next.delete(k);
-          else next.add(k);
-          return next;
-        });
-      }
-    });
+    pending.current.set(k, on);
+    setSaving(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(flush, 700);
   };
 
   const sceneCount = (sid: string) => roles.reduce((n, r) => n + (cells.has(key(sid, r.id)) ? 1 : 0), 0);
@@ -98,9 +140,10 @@ export function BreakdownMatrix({
             );
           })}
         </div>
-        <p className="text-xs text-muted">Tap to toggle · saves instantly</p>
+        <p className="text-xs text-muted" aria-live="polite">{saving ? "Saving…" : "Tap to toggle · saves automatically"}</p>
       </div>
       {error ? <Notice tone="danger">{error}</Notice> : null}
+      {notice && !error ? <Notice tone="success">{notice}</Notice> : null}
 
       {view !== "scene" ? (
         <div className={cn(view === "auto" && "hidden md:block")}>

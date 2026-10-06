@@ -15,6 +15,7 @@ import {
   upsertRoles,
   upsertScenes,
 } from "./production";
+import { withCallImpact } from "@/lib/changes";
 import { type Ctx, fail, getProduction, isUuid, loadOrgPeople } from "./util";
 
 const castRole = z.union([
@@ -79,38 +80,42 @@ export async function importProduction(ctx: Ctx, input: ImportInput) {
     }
     const pid = production.id;
 
-    /* Roles: declared ones, plus any referenced by groups/scenes/cast but not declared. */
-    const declared = new Set(input.roles.map((r) => r.name.trim().toLowerCase()));
-    const referenced = [
-      ...input.groups.flatMap((g) => g.roles),
-      ...input.scenes.flatMap((s) => s.roles ?? []),
-      ...input.cast.flatMap((c) => c.roles.map((r) => (typeof r === "string" ? r : r.role))),
-    ];
-    const existingNow = await upsertRoles(pid, input.roles, tx);
-    const implicit = [...new Set(referenced.map((r) => r.trim()))].filter(
-      (r) => r && !isUuid(r) && !declared.has(r.toLowerCase()) && matchRoles(existingNow.roles, [r]).missing.length > 0,
-    );
-    const roleResult = implicit.length
-      ? await upsertRoles(pid, implicit.map((name) => ({ name })), tx)
-      : existingNow;
-    const allRoles = roleResult.roles;
+    // Everything below can change who's called at published events: record that per person.
+    const { result: r, changes } = await withCallImpact(tx, pid, ctx.userId, async (tx) => {
+      /* Roles: declared ones, plus any referenced by groups/scenes/cast but not declared. */
+      const declared = new Set(input.roles.map((r) => r.name.trim().toLowerCase()));
+      const referenced = [
+        ...input.groups.flatMap((g) => g.roles),
+        ...input.scenes.flatMap((s) => s.roles ?? []),
+        ...input.cast.flatMap((c) => c.roles.map((r) => (typeof r === "string" ? r : r.role))),
+      ];
+      const existingNow = await upsertRoles(pid, input.roles, tx);
+      const implicit = [...new Set(referenced.map((r) => r.trim()))].filter(
+        (r) => r && !isUuid(r) && !declared.has(r.toLowerCase()) && matchRoles(existingNow.roles, [r]).missing.length > 0,
+      );
+      const roleResult = implicit.length
+        ? await upsertRoles(pid, implicit.map((name) => ({ name })), tx)
+        : existingNow;
+      const allRoles = roleResult.roles;
 
-    /* Groups and scenes */
-    const groups = await upsertGroups(pid, input.groups, tx, allRoles);
-    const scenes = await upsertScenes(pid, input.scenes, tx, allRoles);
+      /* Groups and scenes */
+      const groups = await upsertGroups(pid, input.groups, tx, allRoles);
+      const scenes = await upsertScenes(pid, input.scenes, tx, allRoles);
 
-    /* Cast */
-    const pool = await loadOrgPeople(ctx, tx);
-    const people = await upsertPeople(ctx, input.cast, tx, pool);
-    const assignments = input.cast.flatMap((c, i) =>
-      c.roles.map((r) => ({
-        person: people[i].id,
-        role: typeof r === "string" ? r : r.role,
-        kind: typeof r === "string" ? ("primary" as const) : r.kind,
-      })),
-    );
-    const assigned = await assignRoles(ctx, pid, assignments, tx, pool, allRoles);
-
+      /* Cast */
+      const pool = await loadOrgPeople(ctx, tx);
+      const people = await upsertPeople(ctx, input.cast, tx, pool);
+      const assignments = input.cast.flatMap((c, i) =>
+        c.roles.map((r) => ({
+          person: people[i].id,
+          role: typeof r === "string" ? r : r.role,
+          kind: typeof r === "string" ? ("primary" as const) : r.kind,
+        })),
+      );
+      const assigned = await assignRoles(ctx, pid, assignments, tx, pool, allRoles);
+      return { existingNow, implicit, roleResult, allRoles, groups, scenes, people, assigned };
+    });
+    const { existingNow, implicit, roleResult, allRoles, groups, scenes, people, assigned } = r;
     return {
       production: { id: pid, title: production.title, created: productionCreated },
       roles: {
@@ -127,7 +132,9 @@ export async function importProduction(ctx: Ctx, input: ImportInput) {
         guardiansCreated: people.flatMap((p) => p.guardians?.filter((g) => g.created).map((g) => g.name) ?? []),
       },
       assignments: assigned.length,
+      publishedEventsAffected: changes.length,
       next: "Use get_production to review, then create_event to schedule rehearsals by scene.",
+      changes,
     };
   });
 }

@@ -18,7 +18,7 @@ export const personInput = z.object({
   name: z.string().optional().describe("Full name (\"Maya Rivera\"). Alternatively give firstName/lastName."),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  email: z.string().email().nullish().describe("Matching key: an existing person with this email is updated instead of duplicated"),
+  email: z.string().email().nullish().describe("With the first name, the matching key: an existing person with this email AND first name is updated instead of duplicated (families may share an email)"),
   phone: z.string().nullish(),
   isMinor: z.boolean().optional().describe("Under 18. Minors are usually reached through their guardians."),
   birthYear: z.number().int().nullish(),
@@ -48,7 +48,16 @@ async function upsertOne(
   const { firstName, lastName } = nameOf(input);
   const email = input.email ? normalizeEmail(input.email) : null;
   const full = `${firstName} ${lastName}`.trim();
-  let hit = email ? all.find((p) => norm(p.email) === email) : undefined;
+  // Families share one email (siblings, a parent and a kid), so an email alone never identifies a
+  // person: match email AND first name (same rule as audition casting). An email match never
+  // renames anyone.
+  let hit: PersonRow | undefined;
+  if (email) {
+    const sameEmail = all.filter((p) => norm(p.email) === email && norm(p.firstName) === norm(firstName));
+    const exact = sameEmail.length > 1 ? sameEmail.filter((p) => norm(personName(p)) === norm(full)) : sameEmail;
+    if (exact.length > 1) fail(`"${full}" <${email}> matches ${exact.length} people; use their id.`);
+    hit = exact[0];
+  }
   if (!hit) {
     // Don't merge two different people who share a name but have different emails, and never
     // attach to someone with a login account on name alone — a guardianship links the account to
@@ -78,9 +87,9 @@ async function upsertOne(
     return { row, created: true };
   }
   const set: Partial<PersonRow> = {};
-  if (firstName !== hit.firstName) set.firstName = firstName;
-  if ((input.lastName !== undefined || input.name !== undefined) && lastName !== hit.lastName) set.lastName = lastName;
-  if (email && email !== hit.email) set.email = email;
+  // Names are the identity here — never rewritten by an upsert. Fill a missing last name / email only.
+  if (!hit.lastName && lastName) set.lastName = lastName;
+  if (email && !hit.email) set.email = email;
   if (input.phone !== undefined && (input.phone ?? null) !== hit.phone) set.phone = input.phone ?? null;
   if (input.isMinor !== undefined && input.isMinor !== hit.isMinor) set.isMinor = input.isMinor;
   if (input.birthYear !== undefined && (input.birthYear ?? null) !== hit.birthYear) set.birthYear = input.birthYear ?? null;
@@ -101,7 +110,11 @@ export async function upsertPeople(ctx: Ctx, inputs: PersonInput[], q: Q = db, a
     guardians?: { id: string; name: string; created: boolean }[];
   }[] = [];
   for (const input of inputs) {
-    const { row, created } = await upsertOne(ctx, pool, input, q);
+    // A kid listed with a parent's email: the email is the parent's. Don't store or match it on the kid.
+    const guardianEmails = new Set((input.guardians ?? []).map((g) => (g.email ? normalizeEmail(g.email) : "")).filter(Boolean));
+    const ownEmail = input.email ? normalizeEmail(input.email) : null;
+    const personInputClean = ownEmail && guardianEmails.has(ownEmail) ? { ...input, email: null } : input;
+    const { row, created } = await upsertOne(ctx, pool, personInputClean, q);
     const res: (typeof results)[number] = { id: row.id, name: personName(row), created };
     if (input.guardians?.length) {
       res.guardians = [];
@@ -209,11 +222,10 @@ export async function assignRoles(
   return resolved.map((r) => ({ person: personName(r.person), role: r.role.name, kind: r.kind }));
 }
 
-export async function unassignRole(ctx: Ctx, productionRef: string, personRef: string, roleRef: string) {
-  const p = await getProduction(ctx, productionRef);
-  const person = matchPerson(await loadOrgPeople(ctx), personRef) ?? fail(`No person "${personRef}".`);
-  const [role] = requireRoles(await loadRoles(p.id), [roleRef], "unassign_role");
-  const del = await db
+export async function unassignRole(ctx: Ctx, productionId: string, personRef: string, roleRef: string, q: Q = db) {
+  const person = matchPerson(await loadOrgPeople(ctx, q), personRef) ?? fail(`No person "${personRef}".`);
+  const [role] = requireRoles(await loadRoles(productionId, q), [roleRef], "unassign_role");
+  const del = await q
     .delete(roleAssignments)
     .where(and(eq(roleAssignments.roleId, role.id), eq(roleAssignments.personId, person.id)))
     .returning();

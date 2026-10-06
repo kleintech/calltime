@@ -285,16 +285,13 @@ export async function upsertRoles(productionId: string, inputs: RoleInput[], q: 
   return { roles: existing, created, updated, unchanged };
 }
 
-export async function deleteRole(ctx: Ctx, productionRef: string, roleRef: string) {
-  const p = await getProduction(ctx, productionRef);
-  const [role] = requireRoles(await loadRoles(p.id), [roleRef], "delete_role");
-  const assigned = await db.select({ n: count() }).from(roleAssignments).where(eq(roleAssignments.roleId, role.id));
+export async function deleteRole(productionId: string, roleRef: string, q: Q) {
+  const [role] = requireRoles(await loadRoles(productionId, q), [roleRef], "delete_role");
+  const assigned = await q.select({ n: count() }).from(roleAssignments).where(eq(roleAssignments.roleId, role.id));
   // Same as the web delete: drop block calls that targeted this role (no FK cascade from a
-  // polymorphic targetId), then the role — atomically.
-  await db.transaction(async (tx) => {
-    await deleteCallsTargeting("role", role.id, tx);
-    await tx.delete(roles).where(eq(roles.id, role.id));
-  });
+  // polymorphic targetId), then the role. Callers run this in a transaction.
+  await deleteCallsTargeting("role", role.id, q);
+  await q.delete(roles).where(eq(roles.id, role.id));
   return { deleted: role.name, unassignedPeople: assigned[0]?.n ?? 0 };
 }
 
@@ -371,7 +368,7 @@ async function setSceneRoleIds(sceneId: string, roleIds: string[], q: Q) {
   if (uniq.length) await q.insert(sceneRoles).values(uniq.map((roleId) => ({ sceneId, roleId })));
 }
 
-/** Bulk upsert scenes, matched by (act, number) — falling back to exact name. */
+/** Bulk upsert scenes, matched by (act, number) only. */
 export async function upsertScenes(productionId: string, inputs: SceneInput[], q: Q = db, allRoles?: RoleRow[]) {
   const roleRows = allRoles ?? (await loadRoles(productionId, q));
   const existing = await loadScenes(productionId, q);
@@ -382,9 +379,9 @@ export async function upsertScenes(productionId: string, inputs: SceneInput[], q
   const out: { id: string; label: string; roles?: string[]; created: boolean }[] = [];
   for (const s of inputs) {
     const act = s.act ?? 1;
-    let row =
-      existing.find((x) => x.act === act && norm(x.number) === norm(s.number)) ??
-      existing.find((x) => norm(x.name) === norm(s.name) && x.act === act);
+    // Identity is (act, number). Names repeat ("A Rocky Seashore" in 1-1 and 1-3), so never
+    // match by name — that would merge or renumber scenes.
+    let row = existing.find((x) => x.act === act && norm(x.number) === norm(s.number));
     const created = !row;
     if (!row) {
       [row] = await q

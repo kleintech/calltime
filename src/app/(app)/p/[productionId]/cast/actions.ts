@@ -13,6 +13,8 @@ import {
   formAction,
   getPersonInOrg,
   getRoleInProduction,
+  impactNote,
+  mutateCalls,
   parseForm,
   personName,
   type FormState,
@@ -77,7 +79,7 @@ async function getPersonInProduction(productionId: string, orgId: string, person
 /** Assign an existing org person, or a newly created one (optionally with a guardian), to a role. */
 export async function assignRole(productionId: string, _: FormState, fd: FormData): Promise<FormState> {
   return formAction(async () => {
-    const { org } = await requireProductionEditor(productionId);
+    const { org, user } = await requireProductionEditor(productionId);
     const base = parseForm(
       z.object({ roleId: z.string().min(1, "Choose a role"), kind: kindSchema, mode: z.enum(["existing", "new"]) }),
       fd,
@@ -127,46 +129,57 @@ export async function assignRole(productionId: string, _: FormState, fd: FormDat
       who = personName(p);
     }
 
-    await db
-      .insert(roleAssignments)
-      .values({ roleId: role.id, personId, kind: base.kind })
-      .onConflictDoUpdate({ target: [roleAssignments.roleId, roleAssignments.personId], set: { kind: base.kind } });
+    const { affected } = await mutateCalls(productionId, user.id, (tx) =>
+      tx
+        .insert(roleAssignments)
+        .values({ roleId: role.id, personId, kind: base.kind })
+        .onConflictDoUpdate({ target: [roleAssignments.roleId, roleAssignments.personId], set: { kind: base.kind } }),
+    );
     revalidate(productionId);
-    return { message: `${who} cast as ${role.name}${base.kind === "primary" ? "" : ` (${base.kind})`}.` };
+    return {
+      message: `${who} cast as ${role.name}${base.kind === "primary" ? "" : ` (${base.kind})`}.${impactNote(affected)}`,
+    };
   });
 }
 
 export async function setAssignmentKind(productionId: string, roleId: string, personId: string, fd: FormData) {
-  await requireProductionEditor(productionId);
+  const { user } = await requireProductionEditor(productionId);
   await getRoleInProduction(productionId, roleId);
   const kind = kindSchema.parse(fd.get("kind"));
-  await db
-    .update(roleAssignments)
-    .set({ kind })
-    .where(and(eq(roleAssignments.roleId, roleId), eq(roleAssignments.personId, personId)));
+  // Understudies aren't called by scene/group calls, so a kind change can change someone's call.
+  await mutateCalls(productionId, user.id, (tx) =>
+    tx
+      .update(roleAssignments)
+      .set({ kind })
+      .where(and(eq(roleAssignments.roleId, roleId), eq(roleAssignments.personId, personId))),
+  );
   revalidate(productionId);
 }
 
 export async function removeAssignment(productionId: string, roleId: string, personId: string) {
-  await requireProductionEditor(productionId);
+  const { user } = await requireProductionEditor(productionId);
   await getRoleInProduction(productionId, roleId);
-  await db.delete(roleAssignments).where(and(eq(roleAssignments.roleId, roleId), eq(roleAssignments.personId, personId)));
+  await mutateCalls(productionId, user.id, (tx) =>
+    tx.delete(roleAssignments).where(and(eq(roleAssignments.roleId, roleId), eq(roleAssignments.personId, personId))),
+  );
   revalidate(productionId);
 }
 
 /** Add a role to a person from their detail page. */
 export async function addRoleToPerson(productionId: string, personId: string, _: FormState, fd: FormData): Promise<FormState> {
   return formAction(async () => {
-    const { org } = await requireProductionEditor(productionId);
+    const { org, user } = await requireProductionEditor(productionId);
     const person = await getPersonInOrg(org.id, personId);
     const { roleId, kind } = parseForm(z.object({ roleId: z.string().min(1, "Choose a role"), kind: kindSchema }), fd);
     const role = await getRoleInProduction(productionId, roleId);
-    await db
-      .insert(roleAssignments)
-      .values({ roleId: role.id, personId: person.id, kind })
-      .onConflictDoUpdate({ target: [roleAssignments.roleId, roleAssignments.personId], set: { kind } });
+    const { affected } = await mutateCalls(productionId, user.id, (tx) =>
+      tx
+        .insert(roleAssignments)
+        .values({ roleId: role.id, personId: person.id, kind })
+        .onConflictDoUpdate({ target: [roleAssignments.roleId, roleAssignments.personId], set: { kind } }),
+    );
     revalidate(productionId);
-    return { message: `Added ${role.name}.` };
+    return { message: `Added ${role.name}.${impactNote(affected)}` };
   });
 }
 

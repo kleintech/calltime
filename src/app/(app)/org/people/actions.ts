@@ -9,6 +9,7 @@ import { guardianships, people } from "@/db/schema";
 import { requireOrgAdmin } from "@/lib/access";
 import { normalizeEmail } from "@/lib/auth";
 import { createInvite } from "@/lib/invites";
+import { ActionError } from "@/lib/production-queries";
 import { firstIssue, type FormState } from "../_components/form-state";
 import { messageForInvite, personName, splitName } from "../_lib/org";
 
@@ -194,13 +195,23 @@ export async function invitePerson(_: FormState, fd: FormData): Promise<FormStat
   const email = optEmail.safeParse(str(fd, "email"));
   if (!email.success || !email.data) return { error: "Enter the email address they'll sign in with." };
   if (!person.email) await db.update(people).set({ email: email.data }).where(and(eq(people.id, person.id), isNull(people.email)));
-  const { invite, url } = await createInvite({
-    orgId: person.orgId,
-    email: email.data,
-    name: personName(person),
-    personId: person.id,
-    invitedByUserId: user.id,
-  });
+  if (person.email && normalizeEmail(person.email) !== email.data) {
+    return { error: `Use the email on file (${person.email}), or update it under Details first.` };
+  }
+  let created;
+  try {
+    created = await createInvite({
+      orgId: person.orgId,
+      email: email.data,
+      name: personName(person),
+      personId: person.id,
+      invitedByUserId: user.id,
+    });
+  } catch (e) {
+    if (e instanceof ActionError) return { error: e.message };
+    throw e;
+  }
+  const { invite, url } = created;
   revalidatePeople(person.id);
   return { ok: `Invite link for ${personName(person)}`, link: url, message: await messageForInvite(invite, url) };
 }

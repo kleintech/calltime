@@ -4,10 +4,10 @@ import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { creativeTeam, invites, users } from "@/db/schema";
+import { creativeTeam, invites, orgMembers, users } from "@/db/schema";
 import { requireProductionEditor } from "@/lib/access";
 import { createInvite } from "@/lib/invites";
-import { ActionError, ensureOrgMember, formAction, isUuid, parseForm, type FormState } from "@/lib/production-queries";
+import { ActionError, formAction, isUuid, parseForm, type FormState } from "@/lib/production-queries";
 
 const titleSchema = z.object({
   title: z.string().trim().max(60),
@@ -39,9 +39,16 @@ export async function addTeamMember(productionId: string, _: FormState, fd: Form
       fd,
     );
     const title = resolveTitle(t);
-    const existing = await db.query.users.findFirst({ where: eq(users.email, t.email) });
+    // Only people already in this company are added directly. Anyone else — even with a Calltime
+    // account in another company — gets an invite link, and we don't reveal whether they have one.
+    const [member] = await db
+      .select({ user: users })
+      .from(orgMembers)
+      .innerJoin(users, eq(users.id, orgMembers.userId))
+      .where(and(eq(orgMembers.orgId, org.id), eq(users.email, t.email)))
+      .limit(1);
+    const existing = member?.user;
     if (existing) {
-      await ensureOrgMember(org.id, existing.id);
       await db
         .insert(creativeTeam)
         .values({ productionId, userId: existing.id, title, canEdit: t.canEdit })
@@ -61,7 +68,7 @@ export async function addTeamMember(productionId: string, _: FormState, fd: Form
     return {
       inviteUrl: url,
       shareText: `${t.name ? `Hi ${t.name.split(" ")[0]}! ` : ""}${user.name} invited you to join ${production.title} as ${title} on Calltime:`,
-      message: `No account for ${t.email} yet. Send them this link; they'll join as ${title} when they sign up.`,
+      message: `Send ${t.email} this link; they'll join as ${title} when they accept it.`,
     };
   });
 }

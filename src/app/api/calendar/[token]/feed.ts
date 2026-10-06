@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gte, inArray, ne } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { creativeTeam, events, orgMembers, organizations, people, productions, roleAssignments, users } from "@/db/schema";
 import { getCoveredPersonIds } from "@/lib/access";
@@ -11,8 +11,11 @@ const LOOKBACK_MS = 60 * 86400_000;
 
 type User = typeof users.$inferSelect;
 
+const familyLabel = (l: string) => (l === "Individual" ? "Called individually" : l);
+
 function blockLine(b: BlockWithCalls, tz: string) {
-  const what = b.title ? `${b.title}${b.labels.length ? ` (${b.labels.join(", ")})` : ""}` : b.labels.join(", ") || "Rehearsal";
+  const labels = b.labels.map(familyLabel);
+  const what = b.title ? `${b.title}${labels.length ? ` (${labels.join(", ")})` : ""}` : labels.join(", ") || "Rehearsal";
   const extra = [b.leader ? `with ${b.leader}` : null, b.location ? `in ${b.location}` : null].filter(Boolean).join(", ");
   return `• ${fmtRange(b.startsAt, b.endsAt, tz)}  ${what}${extra ? ` — ${extra}` : ""}`;
 }
@@ -93,7 +96,9 @@ export async function buildUserFeed(user: User, baseUrl: string): Promise<string
     const desc: string[] = [];
     if (cancelled) desc.push("This call has been cancelled.", "");
     desc.push(`${c.person.firstName} is called ${fmtRange(c.callAt, c.releaseAt, tz)}.`);
-    if (c.reasons.length) desc.push(`Rehearsing: ${c.reasons.join("; ")}`);
+    // calls.ts labels person-targeted calls "Individual"; say it in family words.
+    const reasons = c.reasons.map(familyLabel);
+    if (reasons.length) desc.push(`Rehearsing: ${reasons.join("; ")}`);
     if (c.blocks.length) {
       desc.push("", "Schedule:");
       for (const b of c.blocks) desc.push(blockLine(b, tz));
@@ -118,7 +123,14 @@ export async function buildUserFeed(user: User, baseUrl: string): Promise<string
     const eventRows = await db
       .select()
       .from(events)
-      .where(and(eq(events.productionId, production.id), ne(events.status, "draft"), gte(events.endsAt, from)))
+      .where(
+        and(
+          eq(events.productionId, production.id),
+          ne(events.status, "draft"),
+          isNotNull(events.publishedAt), // never-published cancellations stay private
+          gte(events.endsAt, from),
+        ),
+      )
       .orderBy(asc(events.startsAt));
     const toShow = eventRows.filter((e) => !eventsWithPersonalCalls.has(e.id));
     if (toShow.length === 0) continue;

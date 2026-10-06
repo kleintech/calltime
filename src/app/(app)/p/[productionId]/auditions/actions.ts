@@ -315,7 +315,7 @@ export async function saveCallback(_: FormState, fd: FormData): Promise<FormStat
 /* ───────── casting ───────── */
 
 export type InviteLink = { name: string; email: string; url: string; as: string };
-export type CastState = { error?: string; ok?: string; invites?: InviteLink[] };
+export type CastState = { error?: string; ok?: string; warning?: string; invites?: InviteLink[] };
 
 const castKind = z.enum(["primary", "understudy", "swing"]);
 
@@ -340,7 +340,11 @@ export async function castAction(_: CastState, fd: FormData): Promise<CastState>
   revalidatePath(`/p/${ctx.productionId}`, "layout");
   const g = result.guardian ? ` Guardian ${result.guardian.name} ${result.guardian.created ? "added" : "linked"}.` : "";
   const c = result.conflictsAdded ? ` ${result.conflictsAdded} conflict${result.conflictsAdded === 1 ? "" : "s"} added to the schedule.` : "";
-  return { ok: `${result.personName} cast.${result.createdPerson ? " New person record created." : ""}${g}${c}`, invites };
+  return {
+    ok: `${result.personName} cast.${result.createdPerson ? " New person record created." : " Matched an existing person record."}${g}${c}`,
+    warning: result.guardianWarning ?? undefined,
+    invites,
+  };
 }
 
 /** Reuse a still-pending invite for this person rather than minting duplicates on every click. */

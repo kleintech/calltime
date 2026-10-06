@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card } from "@/components/ui";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, safeNextPath } from "@/lib/auth";
 import { demoEnabled } from "@/lib/demo";
 import { LoginForm } from "./login-form";
 
@@ -9,7 +9,7 @@ export const metadata = { title: "Sign in" };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { next } = await searchParams;
-  const safeNext = typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : undefined;
+  const safeNext = safeNextPath(next) ?? undefined;
   if (await getCurrentUser()) redirect(safeNext ?? "/home");
   const fromInvite = safeNext?.startsWith("/invite/");
   return (

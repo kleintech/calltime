@@ -127,7 +127,8 @@ export async function saveEvent(productionId: string, input: EventInput, intent:
 
     // Material = something families would notice (time, place, anyone's call/reasons/room).
     // Leader/notes/title tweaks save without a revision bump or "Updated" badge.
-    const material = locked.status !== "draft" && !!before && !!after && isMaterialChange(before, after);
+    // Only a live (published) event can change for families: edits to drafts or cancelled events record nothing.
+    const material = locked.status === "published" && !!before && !!after && isMaterialChange(before, after);
     // Leaving / re-entering families' schedules is a change too ("Removed from…" / "Back on…").
     const unpublishing = intent === "draft" && locked.status !== "draft";
     if (material || republish || unpublishing) {
@@ -199,6 +200,8 @@ export async function setEventStatus(
         break;
       case "cancel":
         if (ev.status === "cancelled") return { ok: true, id: ev.id };
+        // Cancelling a draft would put it in front of families for the first time. Delete it instead.
+        if (ev.status === "draft") return { ok: false, error: "Drafts aren't visible to families. Delete it instead, or publish it first." };
         patch =
           ev.status === "published"
             ? // replace (not keep) the old note so a stale "what changed" isn't read as the cancel reason
@@ -253,28 +256,46 @@ export async function duplicateEvent(productionId: string, eventId: string, toDa
 
 /** Publish every draft in the production. */
 export async function publishAllDrafts(productionId: string): Promise<ActionResult> {
-  await requireProductionEditor(productionId);
+  const { user } = await requireProductionEditor(productionId);
   const drafts = await db
-    .select()
+    .select({ id: events.id })
     .from(events)
     .where(and(eq(events.productionId, productionId), eq(events.status, "draft")));
-  const now = new Date();
-  await db.transaction(async (tx) => {
-    for (const ev of drafts) {
+  const changes: ChangeRow[] = [];
+  const firstPublished: string[] = [];
+  let count = 0;
+  // One transaction per event, same as setEventStatus("publish"): lock, snapshot, bump, record.
+  for (const { id } of drafts) {
+    await db.transaction(async (tx) => {
+      const [ev] = await tx.select().from(events).where(eq(events.id, id)).for("update");
+      if (!ev || ev.status !== "draft") return; // published by someone else meanwhile
+      const now = new Date();
+      const before = ev.publishedAt ? await snapshotEvent(tx, ev.id) : null;
       await tx
         .update(events)
         .set(
           ev.publishedAt
-            ? { status: "published", revision: ev.revision + 1, changedAt: now }
+            ? { status: "published", revision: sql`${events.revision} + 1`, changedAt: now }
             : { status: "published", publishedAt: now },
         )
         .where(eq(events.id, ev.id));
-    }
-  });
-  // First-time publishes announce "New rehearsal" to the families called (after commit).
-  notifyAfterResponse(null, drafts.filter((ev) => !ev.publishedAt).map((ev) => ev.id));
+      count += 1;
+      if (!ev.publishedAt) {
+        firstPublished.push(ev.id);
+        return;
+      }
+      const after = await snapshotEvent(tx, ev.id);
+      const change = await recordEventChange(tx, { before, after, changedByUserId: user.id });
+      if (change) {
+        changes.push(change);
+        await tx.update(events).set({ changeNote: change.summary.slice(0, 300) }).where(eq(events.id, ev.id));
+      }
+    });
+  }
+  for (const c of changes) scheduleChangeNotification(c);
+  notifyAfterResponse(null, firstPublished);
   revalidate(productionId);
-  return { ok: true, count: drafts.length };
+  return { ok: true, count };
 }
 
 /** Copy the (non-cancelled) events of the week starting weekStart (local Monday) to the following week, as drafts. */

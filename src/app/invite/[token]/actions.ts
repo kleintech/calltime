@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { invites, users } from "@/db/schema";
 import { createSession, destroySession, getCurrentUser, verifyPassword } from "@/lib/auth";
+import { checkLoginRateLimit, clearLoginFailures, recordLoginFailure } from "@/lib/rate-limit";
 import { acceptInvite, InviteError, landingFor } from "./accept";
 
 export type AcceptState = { error?: string };
@@ -54,10 +55,14 @@ export async function signInAndAccept(_: AcceptState, fd: FormData): Promise<Acc
   const password = String(fd.get("password") ?? "");
   const invite = await db.query.invites.findFirst({ where: eq(invites.token, token) });
   if (!invite) return { error: "This invite link isn't valid any more." };
+  const limited = await checkLoginRateLimit(invite.email);
+  if (limited) return { error: limited };
   const user = await db.query.users.findFirst({ where: eq(users.email, invite.email) });
   if (!user?.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
+    await recordLoginFailure(invite.email);
     return { error: "That password isn't right." };
   }
+  await clearLoginFailures(invite.email);
   return run(async () => {
     const { invite: accepted } = await acceptInvite(token, { asUserId: user.id });
     await createSession(user.id);

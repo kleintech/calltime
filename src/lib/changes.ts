@@ -105,53 +105,114 @@ export async function snapshotEvent(q: DbOrTx, eventId: string): Promise<EventSn
     .where(eq(events.id, eventId))
     .limit(1);
   if (!row) return null;
+  const idx = await loadCastIndexWith(q, row.event.productionId);
+  return (await buildSnapshots(q, idx, row.tz, [row.event]))[0];
+}
+
+/** Snapshots for several events of ONE production, sharing one cast index (bulk queries). */
+async function buildSnapshots(q: DbOrTx, idx: ProductionCastIndex, tz: string, eventRows: EventRow[]): Promise<EventSnapshot[]> {
+  if (eventRows.length === 0) return [];
   const blockRows = await q
     .select()
     .from(eventBlocks)
-    .where(eq(eventBlocks.eventId, eventId))
+    .where(inArray(eventBlocks.eventId, eventRows.map((e) => e.id)))
     .orderBy(asc(eventBlocks.startsAt), asc(eventBlocks.sortOrder));
   const callRows = blockRows.length
     ? await q.select().from(blockCalls).where(inArray(blockCalls.blockId, blockRows.map((b) => b.id)))
     : [];
-  const idx = await loadCastIndexWith(q, row.event.productionId);
-
   const personIds = [...new Set(callRows.filter((c) => c.target === "person" && c.targetId).map((c) => c.targetId!))];
   const personRows = personIds.length ? await q.select().from(people).where(inArray(people.id, personIds)) : [];
   const personName = new Map(personRows.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim()]));
 
-  const blocks = blockRows.map((b) => ({
-    startsAt: b.startsAt,
-    endsAt: b.endsAt,
-    title: b.title,
-    location: b.location,
-    calls: callRows.filter((c) => c.blockId === b.id).map((c) => ({ target: c.target, targetId: c.targetId })),
-  }));
+  return eventRows.map((event) => {
+    const mine = blockRows.filter((b) => b.eventId === event.id);
+    const blocks = mine.map((b) => ({
+      startsAt: b.startsAt,
+      endsAt: b.endsAt,
+      title: b.title,
+      location: b.location,
+      calls: callRows.filter((c) => c.blockId === b.id).map((c) => ({ target: c.target, targetId: c.targetId })),
+    }));
+    // Team-facing labels name the person; family-facing reasons say "Called individually".
+    const labels: Record<string, string> = {};
+    for (const bl of blocks) for (const c of bl.calls) labels[key(c)] = targetLabel(idx, c, (id) => personName.get(id) ?? "Individual");
+    const reasonFor = (c: CallTarget) => (c.target === "person" ? "Called individually" : labels[key(c)]);
 
-  const labels: Record<string, string> = {};
-  for (const c of callRows) labels[key(c)] = targetLabel(idx, c, (id) => personName.get(id) ?? "Individual");
-
-  // Same rules as buildCallSheets: earliest block start → latest block end; reasons in block order.
-  const calls: Record<string, PersonCallSnap> = {};
-  for (const b of blocks) {
-    const resolved = b.calls.map((c) => ({ c, ppl: resolveTarget(idx, c) }));
-    const inBlock = new Set(resolved.flatMap((r) => [...r.ppl]));
-    for (const pid of inBlock) {
-      const reasons = resolved
-        .filter((r) => r.ppl.has(pid))
-        .map((r) => (b.title && r.c.target !== "scene" ? b.title : labels[key(r.c)]));
-      const rooms = b.location ? [b.location] : [];
-      const cur = calls[pid];
-      if (!cur) calls[pid] = { callAt: b.startsAt.getTime(), releaseAt: b.endsAt.getTime(), reasons: [...new Set(reasons)], rooms };
-      else {
-        cur.callAt = Math.min(cur.callAt, b.startsAt.getTime());
-        cur.releaseAt = Math.max(cur.releaseAt, b.endsAt.getTime());
-        cur.reasons = [...new Set([...cur.reasons, ...reasons])];
-        cur.rooms = [...new Set([...cur.rooms, ...rooms])];
+    // Same rules as buildCallSheets: earliest block start → latest block end; reasons in block order.
+    const calls: Record<string, PersonCallSnap> = {};
+    for (const b of blocks) {
+      const resolved = b.calls.map((c) => ({ c, ppl: resolveTarget(idx, c) }));
+      const inBlock = new Set(resolved.flatMap((r) => [...r.ppl]));
+      for (const pid of inBlock) {
+        const reasons = resolved
+          .filter((r) => r.ppl.has(pid))
+          .map((r) => (b.title && r.c.target !== "scene" ? b.title : reasonFor(r.c)));
+        const rooms = b.location ? [b.location] : [];
+        const cur = calls[pid];
+        if (!cur) calls[pid] = { callAt: b.startsAt.getTime(), releaseAt: b.endsAt.getTime(), reasons: [...new Set(reasons)], rooms };
+        else {
+          cur.callAt = Math.min(cur.callAt, b.startsAt.getTime());
+          cur.releaseAt = Math.max(cur.releaseAt, b.endsAt.getTime());
+          cur.reasons = [...new Set([...cur.reasons, ...reasons])];
+          cur.rooms = [...new Set([...cur.rooms, ...rooms])];
+        }
       }
     }
-  }
+    return { event, tz, blocks, labels, calls };
+  });
+}
 
-  return { event: row.event, tz: row.tz, blocks, labels, calls };
+/** Every upcoming published event of a production, snapshotted through `q`. */
+async function snapshotUpcoming(q: DbOrTx, productionId: string) {
+  const [org] = await q
+    .select({ tz: organizations.timezone })
+    .from(productions)
+    .innerJoin(organizations, eq(organizations.id, productions.orgId))
+    .where(eq(productions.id, productionId));
+  if (!org) return [];
+  const eventRows = await q
+    .select()
+    .from(events)
+    .where(and(eq(events.productionId, productionId), eq(events.status, "published"), gte(events.endsAt, new Date())));
+  if (eventRows.length === 0) return [];
+  const idx = await loadCastIndexWith(q, productionId);
+  return buildSnapshots(q, idx, org.tz, eventRows);
+}
+
+/**
+ * Run a cast / breakdown / group edit and record what it did to already-published, upcoming
+ * events: anyone whose call appears, disappears, moves or changes content gets a change entry
+ * and the event's revision (ICS SEQUENCE) is bumped. Must run inside a transaction:
+ *
+ *   const { result, changes } = await db.transaction((tx) =>
+ *     withCallImpact(tx, productionId, user.id, () => assignRoles(…, tx)));
+ *   for (const c of changes) scheduleChangeNotification(c);   // after commit
+ */
+export async function withCallImpact<T>(
+  tx: DbOrTx,
+  productionId: string,
+  actorUserId: string | null,
+  fn: (tx: DbOrTx) => Promise<T>,
+): Promise<{ result: T; changes: (typeof eventChanges.$inferSelect)[] }> {
+  const before = await snapshotUpcoming(tx, productionId);
+  const result = await fn(tx);
+  if (before.length === 0) return { result, changes: [] };
+  const afterList = await snapshotUpcoming(tx, productionId);
+  const afterById = new Map(afterList.map((s) => [s.event.id, s]));
+  const changes: (typeof eventChanges.$inferSelect)[] = [];
+  for (const b of before) {
+    const a = afterById.get(b.event.id);
+    if (!a || Object.keys(describePersonImpact(b, a)).length === 0) continue;
+    const [row] = await tx
+      .update(events)
+      .set({ revision: sql`${events.revision} + 1`, changedAt: new Date(), changeNote: "Who's called changed — check your call" })
+      .where(eq(events.id, b.event.id))
+      .returning();
+    a.event = row;
+    const change = await recordEventChange(tx, { before: b, after: a, changedByUserId: actorUserId });
+    if (change) changes.push(change);
+  }
+  return { result, changes };
 }
 
 function callText(c: PersonCallSnap, tz: string, withDay: boolean) {
@@ -197,8 +258,13 @@ export function describePersonImpact(before: EventSnapshot, after: EventSnapshot
       } else if (reinstated) parts.push(`${republished ? "Back on the schedule" : "Back on"} — called ${callText(now, tz, false)}`);
       const added = now.reasons.filter((r) => !was.reasons.includes(r));
       const dropped = was.reasons.filter((r) => !now.reasons.includes(r));
-      if (added.length) parts.push(`now rehearsing ${added.join(", ")}`);
-      if (dropped.length) parts.push(`no longer ${dropped.join(", ")}`);
+      const IND = "Called individually";
+      const addedR = added.filter((r) => r !== IND);
+      const droppedR = dropped.filter((r) => r !== IND);
+      if (addedR.length) parts.push(`now rehearsing ${addedR.join(", ")}`);
+      if (added.includes(IND)) parts.push("now also called individually");
+      if (droppedR.length) parts.push(`no longer ${droppedR.join(", ")}`);
+      if (dropped.includes(IND)) parts.push("no longer called individually");
       const roomsNow = [...now.rooms].sort().join(", ");
       if (roomsNow !== [...was.rooms].sort().join(", ")) parts.push(roomsNow ? `room now ${roomsNow}` : "room changed");
     }
@@ -294,7 +360,7 @@ export async function recordEventChange(
   const personSummaries = describePersonImpact(before, after);
   if (!diff && Object.keys(personSummaries).length === 0) return null;
   const note = opts.note?.trim();
-  const base = diff || "Calls changed";
+  const base = diff || "Cast or scene changes affected who's called";
   const summary = note && !base.includes(note) ? `${base} — “${note}”` : base;
   const [row] = await q
     .insert(eventChanges)

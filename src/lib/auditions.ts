@@ -238,6 +238,8 @@ export type CastResult = {
   createdPerson: boolean;
   guardian: { personId: string; name: string; email: string | null; created: boolean } | null;
   conflictsAdded: number;
+  /** Set when the signup named a guardian we deliberately didn't attach (person already existed). */
+  guardianWarning: string | null;
 };
 
 /**
@@ -259,10 +261,24 @@ export async function castSignup(opts: {
   tz: string;
   createdByUserId?: string | null;
 }): Promise<CastResult> {
-  const { orgId, signup } = opts;
+  const { orgId } = opts;
   return db.transaction(async (tx) => {
+    // Serialize concurrent casts of the same signup (two tabs / two editors): lock the row and re-read
+    // it, so the second caller sees the personId the first one set and reuses that person.
+    const [signup] = await tx.select().from(auditionSignups).where(eq(auditionSignups.id, opts.signup.id)).for("update");
+    if (!signup) throw new Error("Signup not found");
     const email = signup.email ? normalizeEmail(signup.email) : null;
     const isMinor = signup.age != null && signup.age < 18;
+    const gEmail = signup.guardianEmail ? normalizeEmail(signup.guardianEmail) : null;
+    const gName = signup.guardianName?.trim() || null;
+
+    // Different signups can resolve to the same person or guardian (siblings share a parent). Take
+    // transaction-scoped advisory locks on those identities so parallel casts can't both create them.
+    const lockKeys = [
+      email ? `person:${orgId}:${email}:${signup.firstName.trim().toLowerCase()}` : null,
+      gEmail ? `guardian:${orgId}:${gEmail}` : null,
+    ].filter((k): k is string => !!k).sort();
+    for (const k of lockKeys) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${k}))`);
 
     let person: typeof people.$inferSelect | undefined;
     if (signup.personId) {
@@ -302,17 +318,41 @@ export async function castSignup(opts: {
     }
 
     let guardian: CastResult["guardian"] = null;
-    const gEmail = signup.guardianEmail ? normalizeEmail(signup.guardianEmail) : null;
-    const gName = signup.guardianName?.trim() || null;
-    if (gEmail || gName) {
+    let guardianWarning: string | null = null;
+    if ((gEmail || gName) && !createdPerson) {
+      // Existing person: the public form must not be able to attach a new guardian to someone already
+      // on file (anyone can type a known child's name and email). Only confirm a guardian they already have.
+      const existing = await tx
+        .select({ p: people })
+        .from(guardianships)
+        .innerJoin(people, eq(people.id, guardianships.guardianId))
+        .where(eq(guardianships.minorId, person.id));
+      const match = gEmail ? existing.find((e) => e.p.email && normalizeEmail(e.p.email) === gEmail) : undefined;
+      if (match) {
+        guardian = { personId: match.p.id, name: fullName(match.p), email: match.p.email, created: false };
+      } else {
+        const listed = [gName, gEmail ? `<${gEmail}>` : null].filter(Boolean).join(" ");
+        guardianWarning = `${fullName(person)} was already on file${
+          existing.length ? ` with guardian${existing.length === 1 ? "" : "s"} ${existing.map((e) => fullName(e.p)).join(", ")}` : " with no guardian"
+        }. The signup lists a different guardian (${listed}). Not linked, and no invite was made for them — add them from the person's page if that's correct.`;
+      }
+    } else if (gEmail || gName) {
       let g: typeof people.$inferSelect | undefined;
       if (gEmail) {
-        // Prefer the person who is already somebody's guardian, then any person with that email.
+        // Reuse only an adult with this email. Kids often carry a parent's email, so a minor is never
+        // picked as the guardian. With a guardian name, the person's name must match it; without one,
+        // only someone who is already a guardian is reused. Otherwise a new guardian person is created.
         const candidates = await tx
           .select({ p: people, isGuardian: sql<boolean>`exists (select 1 from ${guardianships} where ${guardianships.guardianId} = ${people.id})` })
           .from(people)
-          .where(and(eq(people.orgId, orgId), sql`lower(${people.email}) = ${gEmail}`, ne(people.id, person.id)));
-        g = (candidates.find((c) => c.isGuardian) ?? candidates[0])?.p;
+          .where(
+            and(eq(people.orgId, orgId), sql`lower(${people.email}) = ${gEmail}`, ne(people.id, person.id), eq(people.isMinor, false)),
+          );
+        const norm = (v: string) => v.toLowerCase().replace(/\s+/g, " ").trim();
+        const named = gName
+          ? candidates.filter((c) => norm(`${c.p.firstName} ${c.p.lastName}`) === norm(gName))
+          : candidates.filter((c) => c.isGuardian);
+        g = (named.find((c) => c.isGuardian) ?? named[0])?.p;
       }
       let created = false;
       if (!g) {
@@ -366,7 +406,7 @@ export async function castSignup(opts: {
       .set({ status: "cast", personId: person.id })
       .where(eq(auditionSignups.id, signup.id));
 
-    return { personId: person.id, personName: fullName(person), createdPerson, guardian, conflictsAdded };
+    return { personId: person.id, personName: fullName(person), createdPerson, guardian, guardianWarning, conflictsAdded };
   });
 }
 

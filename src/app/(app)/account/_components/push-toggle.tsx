@@ -66,7 +66,13 @@ export function PushToggle({ publicKey }: { publicKey: string | null }) {
       const sub =
         (await reg.pushManager.getSubscription()) ??
         (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(publicKey) }));
-      await savePushSubscription(sub.toJSON(), navigator.userAgent);
+      const saved = await savePushSubscription(sub.toJSON(), navigator.userAgent);
+      if ("error" in saved) {
+        await sub.unsubscribe();
+        setStatus("off");
+        toast("This browser's push service isn't supported. Use the calendar feed instead.", { tone: "danger" });
+        return;
+      }
       setStatus("on");
       toast("Notifications on for this device.", { tone: "success" });
     } catch (e) {

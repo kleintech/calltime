@@ -249,33 +249,42 @@ export function eventToInput(
 export type AttendanceStatus = (typeof attendance.$inferSelect)["status"];
 
 /**
- * Mark people who reported a conflict overlapping their call as excused, unless someone already
- * marked them. Idempotent; run when the attendance sheet opens.
+ * People called to this event who reported an overlapping conflict (personId → note), and — the
+ * first time the attendance sheet opens for the event — mark them "excused". It runs once per
+ * event (events.autoExcusedAt), so a stage manager who clears an auto-excuse isn't overridden on
+ * the next load; later-reported conflicts are shown as a hint instead.
  */
 export async function ensureExcusedForConflicts(
   eventId: string,
   productionId: string,
   calls: Map<string, { callAt: Date; releaseAt: Date }>,
   markedByUserId: string,
-) {
+): Promise<Map<string, string>> {
   const ids = [...calls.keys()];
-  if (ids.length === 0) return;
+  const out = new Map<string, string>();
+  if (ids.length === 0) return out;
   const from = new Date(Math.min(...[...calls.values()].map((c) => c.callAt.getTime())));
   const to = new Date(Math.max(...[...calls.values()].map((c) => c.releaseAt.getTime())));
   const cs = await getConflictsFor(ids, productionId, from, to);
-  const rows = cs
-    .filter((c) => {
-      const call = calls.get(c.personId);
-      return call && c.startsAt < call.releaseAt && call.callAt < c.endsAt;
-    })
-    .map((c) => ({ eventId, personId: c.personId, status: "excused" as const, markedByUserId, note: c.note ? `Conflict: ${c.note}` : "Reported a conflict" }));
-  if (rows.length) await db.insert(attendance).values(dedupeBy(rows, (r) => r.personId)).onConflictDoNothing();
+  for (const c of cs) {
+    const call = calls.get(c.personId);
+    if (call && c.startsAt < call.releaseAt && call.callAt < c.endsAt && !out.has(c.personId))
+      out.set(c.personId, c.note ? `Conflict: ${c.note}` : "Reported a conflict");
+  }
+  const [first] = await db
+    .update(events)
+    .set({ autoExcusedAt: new Date() })
+    .where(and(eq(events.id, eventId), isNull(events.autoExcusedAt)))
+    .returning({ id: events.id });
+  if (first && out.size) {
+    await db
+      .insert(attendance)
+      .values([...out].map(([personId, note]) => ({ eventId, personId, status: "excused" as const, markedByUserId, note })))
+      .onConflictDoNothing();
+  }
+  return out;
 }
 
-function dedupeBy<T>(xs: T[], k: (x: T) => string) {
-  const seen = new Set<string>();
-  return xs.filter((x) => (seen.has(k(x)) ? false : (seen.add(k(x)), true)));
-}
 
 export type AttendanceSummary = {
   present: number;

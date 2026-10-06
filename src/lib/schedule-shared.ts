@@ -129,3 +129,7 @@ export const mapsUrl = (q: string) => `https://maps.apple.com/?q=${encodeURIComp
 
 /** Monday (in tz) of the week containing d, as "yyyy-MM-dd" — used for week anchors (#week-…). */
 export const weekKey = (d: Date, tz: string) => format(startOfWeek(new TZDate(d.getTime(), tz), { weekStartsOn: 1 }), "yyyy-MM-dd");
+
+/** The same wall-clock time `days` calendar days later in tz (DST-safe, unlike +24h). */
+export const addLocalDays = (d: Date, days: number, tz: string) =>
+  new Date(new TZDate(d.getTime(), tz).setDate(new TZDate(d.getTime(), tz).getDate() + days));

@@ -12,6 +12,8 @@ import {
   deleteCallsTargeting,
   formAction,
   getSceneInProduction,
+  impactNote,
+  mutateCalls,
   parseForm,
   renumber,
   type FormState,
@@ -61,25 +63,31 @@ export async function createScene(productionId: string, _: FormState, fd: FormDa
 
 export async function updateScene(productionId: string, sceneId: string, _: FormState, fd: FormData): Promise<FormState> {
   return formAction(async () => {
-    await requireProductionEditor(productionId);
+    const { user } = await requireProductionEditor(productionId);
     await getSceneInProduction(productionId, sceneId);
     const { roleIds, hasRoles, ...data } = parseForm(sceneSchema, fd);
+    // Label edits (name, songs…) aren't call changes, so they stay outside the impact wrapper.
     await db.update(scenes).set(data).where(eq(scenes.id, sceneId));
+    let affected = 0;
     if (hasRoles) {
       const ids = await assertRolesInProduction(productionId, roleIds ?? []);
-      await db.delete(sceneRoles).where(eq(sceneRoles.sceneId, sceneId));
-      if (ids.length) await db.insert(sceneRoles).values(ids.map((roleId) => ({ sceneId, roleId })));
+      ({ affected } = await mutateCalls(productionId, user.id, async (tx) => {
+        await tx.delete(sceneRoles).where(eq(sceneRoles.sceneId, sceneId));
+        if (ids.length) await tx.insert(sceneRoles).values(ids.map((roleId) => ({ sceneId, roleId })));
+      }));
     }
     revalidate(productionId);
-    return { message: "Saved." };
+    return { message: `Saved.${impactNote(affected)}` };
   });
 }
 
 export async function deleteScene(productionId: string, sceneId: string) {
-  await requireProductionEditor(productionId);
+  const { user } = await requireProductionEditor(productionId);
   await getSceneInProduction(productionId, sceneId);
-  await db.delete(scenes).where(and(eq(scenes.id, sceneId), eq(scenes.productionId, productionId)));
-  await deleteCallsTargeting("scene", sceneId);
+  await mutateCalls(productionId, user.id, async (tx) => {
+    await tx.delete(scenes).where(and(eq(scenes.id, sceneId), eq(scenes.productionId, productionId)));
+    await deleteCallsTargeting("scene", sceneId, tx);
+  });
   revalidate(productionId);
   redirect(`/p/${productionId}/scenes`);
 }

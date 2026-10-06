@@ -1,3 +1,4 @@
+import { addLocalDays } from "@/lib/schedule-shared";
 import { and, asc, count, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { AlertTriangle, Ban, Check, ChevronRight, Circle, FileSpreadsheet, Link2 } from "lucide-react";
 import Link from "next/link";
@@ -37,7 +38,7 @@ export default async function ProductionOverview({ params }: PageProps<"/p/[prod
       : [];
     const calls = (await getCallsForPeople(covered, { from: now })).filter((c) => c.production.id === productionId).slice(0, 6);
     const today = dayKey(now, tz);
-    const tomorrow = dayKey(new Date(now.getTime() + 86400_000), tz);
+    const tomorrow = dayKey(addLocalDays(now, 1, tz), tz);
     const dayLabel = (d: Date) => {
       const k = dayKey(d, tz);
       return k === today ? `Today · ${fmtDay(d, tz)}` : k === tomorrow ? `Tomorrow · ${fmtDay(d, tz)}` : fmtDay(d, tz);

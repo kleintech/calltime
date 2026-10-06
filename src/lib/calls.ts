@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gte, inArray, lte, ne } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lte, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   blockCalls,
@@ -129,7 +129,7 @@ export function targetLabel(idx: ProductionCastIndex, t: CallTarget, personName?
     case "group":
       return idx.groupById.get(t.targetId ?? "")?.name ?? "Group";
     case "person":
-      return personName?.(t.targetId ?? "") ?? "Individual";
+      return personName?.(t.targetId ?? "") ?? "Called individually";
   }
 }
 
@@ -248,7 +248,9 @@ export async function getCallsForPeople(
     const production = await db.query.productions.findFirst({ where: eq(productions.id, productionId) });
     if (!production) continue;
     const conds = [eq(events.productionId, productionId)];
-    if (!opts.includeDrafts) conds.push(ne(events.status, "draft"));
+    // Families only see events that were actually published at some point: a never-published
+    // draft that got cancelled must not leak into My Calls or the calendar feed.
+    if (!opts.includeDrafts) conds.push(ne(events.status, "draft"), isNotNull(events.publishedAt));
     if (opts.from) conds.push(gte(events.endsAt, opts.from));
     if (opts.to) conds.push(lte(events.startsAt, opts.to));
     const eventRows = await db.select().from(events).where(and(...conds)).orderBy(asc(events.startsAt));

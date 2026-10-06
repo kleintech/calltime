@@ -19,7 +19,7 @@ export default async function AttendancePage({ params }: PageProps<"/p/[producti
   if (!sheet || sheet.event.productionId !== productionId) notFound();
   const tz = org.timezone;
 
-  await ensureExcusedForConflicts(eventId, productionId, sheet.calls, user.id);
+  const conflictNotes = await ensureExcusedForConflicts(eventId, productionId, sheet.calls, user.id);
   const rows = await db.select().from(attendance).where(eq(attendance.eventId, eventId));
   const byPerson = new Map(rows.map((r) => [r.personId, r]));
   const ids = [...sheet.calls.keys()];
@@ -38,6 +38,7 @@ export default async function AttendancePage({ params }: PageProps<"/p/[producti
         reasons: c.reasons,
         status: a?.status ?? null,
         note: a?.note ?? null,
+        conflict: conflictNotes.get(c.personId) ?? null,
         checkedInAt: a?.checkedInAt?.toISOString() ?? null,
         checkedOutAt: a?.checkedOutAt?.toISOString() ?? null,
         pickedUpBy: a?.pickedUpBy ?? null,

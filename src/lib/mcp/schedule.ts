@@ -393,10 +393,13 @@ export async function publishEvents(
 export async function cancelEvent(ctx: Ctx, id: string, reason?: string | null) {
   const { event } = await getEvent(ctx, id);
   if (event.status === "cancelled") return { id, status: "cancelled", note: "already cancelled" };
+  if (event.status === "draft" && !event.publishedAt)
+    fail("This event was never published, so families never saw it — delete it instead (delete_event).");
   let change: Awaited<ReturnType<typeof recordEventChange>> = null;
   const row = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(events).where(eq(events.id, event.id)).for("update");
     if (locked.status === "cancelled") return locked;
+    if (locked.status === "draft" && !locked.publishedAt) fail("This event was never published — delete it instead.");
     const before = await snapshotEvent(tx, event.id);
     const wasVisible = locked.status === "published";
     const [r] = await tx

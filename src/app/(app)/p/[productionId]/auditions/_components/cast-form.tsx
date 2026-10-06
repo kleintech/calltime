@@ -33,6 +33,8 @@ function Result({ state }: { state: CastState }) {
   return (
     <>
       {state.error ? <Notice tone="danger">{state.error}</Notice> : null}
+      {/* Stays on screen (not a toast): staff must act on it. */}
+      {state.warning ? <Notice tone="warn">{state.warning}</Notice> : null}
       {state.invites?.length ? <InviteLinks invites={state.invites} /> : null}
     </>
   );

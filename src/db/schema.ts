@@ -322,6 +322,8 @@ export const events = pgTable(
     changeNote: text("change_note"),
     /** When the last material change (revision bump) or cancellation happened. */
     changedAt: timestamp("changed_at", { withTimezone: true }),
+    /** When conflicts were first auto-marked "excused" on the attendance sheet (runs once per event). */
+    autoExcusedAt: timestamp("auto_excused_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -838,4 +840,17 @@ export const pushSubscriptions = pgTable(
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
   },
   (t) => [index("push_subscriptions_user_idx").on(t.userId)],
+);
+
+/* ───────────────────────── Auth rate limiting ───────────────────────── */
+
+/** One failed password check. key = "email:<addr>" or "ip:<addr>". Rows older than a day are pruned. */
+export const authFailures = pgTable(
+  "auth_failures",
+  {
+    id: id(),
+    key: text("key").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("auth_failures_key_time_idx").on(t.key, t.createdAt)],
 );

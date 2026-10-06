@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { creativeTeam, guardianships, invites, orgMembers, organizations, people, productions, users } from "@/db/schema";
 import { hashPassword, normalizeEmail, randomToken } from "@/lib/auth";
@@ -57,16 +57,10 @@ export async function acceptInvite(
     } else {
       const email = normalizeEmail(invite.email);
       const existing = await tx.query.users.findFirst({ where: eq(users.email, email) });
-      if (existing?.passwordHash) throw new InviteError("There's already an account for this email. Sign in to accept.");
+      // Never take over an existing account from an invite link (we can't verify email ownership).
+      if (existing) throw new InviteError("There's already an account for this email. Sign in to accept.");
       const passwordHash = await hashPassword(who.password);
-      if (existing) {
-        [user] = await tx.update(users).set({ name: who.name, passwordHash }).where(eq(users.id, existing.id)).returning();
-      } else {
-        [user] = await tx
-          .insert(users)
-          .values({ email, name: who.name, passwordHash, calendarToken: randomToken() })
-          .returning();
-      }
+      [user] = await tx.insert(users).values({ email, name: who.name, passwordHash, calendarToken: randomToken() }).returning();
     }
     const userId = user.id;
 
@@ -96,15 +90,19 @@ export async function acceptInvite(
       }
     }
 
-    /* 4. Become this person (only if nobody has claimed it) */
+    /* 4. Become this person — only the record the invite names explicitly, only if unclaimed, and only
+     *    if its email still matches the invite (createInvite enforces this at creation too). */
     if (invite.personId) {
-      await tx
-        .update(people)
-        .set({ userId })
-        .where(and(eq(people.id, invite.personId), eq(people.orgId, invite.orgId), isNull(people.userId)));
+      const person = await tx.query.people.findFirst({
+        where: and(eq(people.id, invite.personId), eq(people.orgId, invite.orgId), isNull(people.userId)),
+      });
+      if (person && (!person.email || normalizeEmail(person.email) === normalizeEmail(invite.email))) {
+        await tx.update(people).set({ userId }).where(and(eq(people.id, person.id), isNull(people.userId)));
+      }
     }
 
-    /* 5. Guardian of a person: find/create the user's own person record in the org, then link */
+    /* 5. Guardian of a person: the user's OWN already-linked person in this org, else a fresh one.
+     *    Never adopt an existing record by email match — that would hand over its other guardianships. */
     if (invite.guardianOfPersonId) {
       const minor = await tx.query.people.findFirst({
         where: and(eq(people.id, invite.guardianOfPersonId), eq(people.orgId, invite.orgId)),
@@ -112,19 +110,11 @@ export async function acceptInvite(
       if (minor) {
         let self = await tx.query.people.findFirst({ where: and(eq(people.orgId, invite.orgId), eq(people.userId, userId)) });
         if (!self) {
-          // An unlinked record with the same email (e.g. a guardian added by the office) is this person.
-          self = await tx.query.people.findFirst({
-            where: and(eq(people.orgId, invite.orgId), isNull(people.userId), sql`lower(${people.email}) = ${user.email}`),
-          });
-          if (self && self.id !== minor.id) {
-            await tx.update(people).set({ userId }).where(eq(people.id, self.id));
-          } else {
-            const [first, ...rest] = user.name.trim().split(/\s+/);
-            [self] = await tx
-              .insert(people)
-              .values({ orgId: invite.orgId, userId, firstName: first || user.name, lastName: rest.join(" "), email: user.email, phone: user.phone })
-              .returning();
-          }
+          const [first, ...rest] = user.name.trim().split(/\s+/);
+          [self] = await tx
+            .insert(people)
+            .values({ orgId: invite.orgId, userId, firstName: first || user.name, lastName: rest.join(" "), email: user.email, phone: user.phone })
+            .returning();
         }
         if (self.id !== minor.id) {
           await tx.insert(guardianships).values({ guardianId: self.id, minorId: minor.id }).onConflictDoNothing();

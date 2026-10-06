@@ -13,6 +13,8 @@ import {
   formAction,
   getGroupInProduction,
   getRoleInProduction,
+  impactNote,
+  mutateCalls,
   parseForm,
   renumber,
   type FormState,
@@ -71,10 +73,12 @@ export async function updateRole(productionId: string, roleId: string, _: FormSt
 }
 
 export async function deleteRole(productionId: string, roleId: string) {
-  await requireProductionEditor(productionId);
+  const { user } = await requireProductionEditor(productionId);
   await getRoleInProduction(productionId, roleId);
-  await db.delete(roles).where(and(eq(roles.id, roleId), eq(roles.productionId, productionId)));
-  await deleteCallsTargeting("role", roleId);
+  await mutateCalls(productionId, user.id, async (tx) => {
+    await tx.delete(roles).where(and(eq(roles.id, roleId), eq(roles.productionId, productionId)));
+    await deleteCallsTargeting("role", roleId, tx);
+  });
   revalidate(productionId);
   redirect(`/p/${productionId}/roles`);
 }
@@ -113,23 +117,28 @@ export async function createGroup(productionId: string, _: FormState, fd: FormDa
 
 export async function updateGroup(productionId: string, groupId: string, _: FormState, fd: FormData): Promise<FormState> {
   return formAction(async () => {
-    await requireProductionEditor(productionId);
+    const { user } = await requireProductionEditor(productionId);
     await getGroupInProduction(productionId, groupId);
     const { roleIds, ...data } = parseForm(groupSchema, fd);
     const ids = await assertRolesInProduction(productionId, roleIds);
+    // Name/color are labels; membership decides who a group call reaches.
     await db.update(roleGroups).set(data).where(eq(roleGroups.id, groupId));
-    await db.delete(roleGroupMembers).where(eq(roleGroupMembers.groupId, groupId));
-    if (ids.length) await db.insert(roleGroupMembers).values(ids.map((roleId) => ({ groupId, roleId })));
+    const { affected } = await mutateCalls(productionId, user.id, async (tx) => {
+      await tx.delete(roleGroupMembers).where(eq(roleGroupMembers.groupId, groupId));
+      if (ids.length) await tx.insert(roleGroupMembers).values(ids.map((roleId) => ({ groupId, roleId })));
+    });
     revalidate(productionId);
-    return { message: "Saved." };
+    return { message: `Saved.${impactNote(affected)}` };
   });
 }
 
 export async function deleteGroup(productionId: string, groupId: string) {
-  await requireProductionEditor(productionId);
+  const { user } = await requireProductionEditor(productionId);
   await getGroupInProduction(productionId, groupId);
-  await db.delete(roleGroups).where(and(eq(roleGroups.id, groupId), eq(roleGroups.productionId, productionId)));
-  await deleteCallsTargeting("group", groupId);
+  await mutateCalls(productionId, user.id, async (tx) => {
+    await tx.delete(roleGroups).where(and(eq(roleGroups.id, groupId), eq(roleGroups.productionId, productionId)));
+    await deleteCallsTargeting("group", groupId, tx);
+  });
   revalidate(productionId);
   redirect(`/p/${productionId}/roles`);
 }

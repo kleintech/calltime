@@ -34,7 +34,8 @@ import {
   updateEvent,
 } from "./schedule";
 import { db } from "@/db";
-import { ToolError, getProduction } from "./util";
+import { scheduleChangeNotification, withCallImpact } from "@/lib/changes";
+import { ToolError, type Tx, getProduction } from "./util";
 
 export const SERVER_INSTRUCTIONS = `Calltime schedules theater rehearsals BY SCENE so every actor (and their parents) automatically knows when they're called.
 
@@ -50,10 +51,10 @@ const GUIDE = `# Importing a script and cast list into Calltime
 2. Groups (\`groups\`): bundles you'll call together, e.g. "Pirate Band" = Pirate King + Samuel + Pirates; "Daughters" = Mabel + Edith + Kate + Isabel + Daughters. Optional but handy for music/dance calls.
 3. Scenes (\`scenes\`): walk the script in order. For each scene give act, number (text: "1", "3A", "Prologue"), name, songs, pages, and \`roles\` = every role on stage in that scene (including ensembles). This breakdown is what makes scene-based scheduling work — be thorough; when unsure whether a character appears, include them.
 4. Cast (\`cast\`): each person with name, email if known, isMinor for kids, guardians [{name, email, phone, relationship}] for minors, and roles. Understudies/swings: roles: [{role: "Mabel", kind: "understudy"}].
-5. Send it all in ONE import_production call. It's idempotent: re-run it with corrections and it updates in place (matching production by title, roles by name, scenes by act+number, people by email then full name). It never deletes; use delete_role / unassign_role for removals.
+5. Send it all in ONE import_production call. It's idempotent: re-run it with corrections and it updates in place (matching production by title, roles by name, scenes by act + number, people by email + first name, else exact full name). It never deletes; use delete_role / unassign_role for removals.
 6. Verify with get_production. Then schedule with create_event: blocks like {start: "2026-10-07T18:00", end: "2026-10-07T19:30", title: "Block Act 1", leader: "Director", calls: [{type: "scene", ref: "Act 1 Sc 2"}, {type: "scene", ref: "Act 1 Sc 3"}]}. Each person's call time is computed automatically. Check get_call_sheet, look at list_conflicts, then publish_events.
 
-Tips: don't invent emails, but DO include real ones when you have them — people are matched by email first. Without an email, a person is matched by exact full name, and never to someone who already has a login account (to avoid linking a stranger to a child's schedule); two different people with the same name and no email can't be told apart, so add an email or a distinguishing detail to the name. Names must match exactly between scenes/groups/cast and roles (case-insensitive). Unknown role names referenced in scenes/groups/cast are auto-created by import_production (reported in roles.autoCreatedFromReferences) — check that list for typos.`;
+Tips: don't invent emails, but DO include real ones when you have them — people are matched by email + first name (families often share one email, so siblings stay separate). A kid listed with a parent's email keeps it on the parent only. Without an email, a person is matched by exact full name, and never to someone who already has a login account (to avoid linking a stranger to a child's schedule); two different people with the same name and no email can't be told apart, so add an email or a distinguishing detail to the name. Names must match exactly between scenes/groups/cast and roles (case-insensitive). Unknown role names referenced in scenes/groups/cast are auto-created by import_production (reported in roles.autoCreatedFromReferences) — check that list for typos.`;
 
 type Handler<S extends z.ZodType> = (args: z.infer<S>, auth: McpAuth) => Promise<unknown>;
 
@@ -84,6 +85,12 @@ export function registerCalltimeTools(server: McpServer) {
     });
   };
   const RO = { readOnlyHint: true };
+  /** Cast/breakdown edits: one tx, per-person change entries for published events, pushes after commit. */
+  const withImpact = async <T,>(productionId: string, userId: string, fn: (tx: Tx) => Promise<T>) => {
+    const { result, changes } = await db.transaction((tx) => withCallImpact(tx, productionId, userId, (t) => fn(t as Tx)));
+    for (const c of changes) scheduleChangeNotification(c);
+    return { result, publishedEventsAffected: changes.length };
+  };
   const production = z.string().describe("Production id or exact title");
 
   /* Guidance */
@@ -128,7 +135,11 @@ export function registerCalltimeTools(server: McpServer) {
     "delete_role",
     "Delete a role. Also removes it from scenes and groups and unassigns everyone who played it.",
     z.object({ production, role: z.string().describe("Role name or id") }),
-    (a, c) => deleteRole(c, a.production, a.role),
+    async (a, c) => {
+      const p = await getProduction(c, a.production);
+      const { result, publishedEventsAffected } = await withImpact(p.id, c.userId, (tx) => deleteRole(p.id, a.role, tx));
+      return { ...result, publishedEventsAffected };
+    },
     { destructiveHint: true },
   );
   tool(
@@ -137,17 +148,19 @@ export function registerCalltimeTools(server: McpServer) {
     z.object({ production, groups: z.array(groupInput).min(1) }),
     async (a, c) => {
       const p = await getProduction(c, a.production);
-      return { groups: await db.transaction((tx) => upsertGroups(p.id, a.groups, tx)) };
+      const { result, publishedEventsAffected } = await withImpact(p.id, c.userId, (tx) => upsertGroups(p.id, a.groups, tx));
+      return { groups: result, publishedEventsAffected };
     },
     { idempotentHint: true },
   );
   tool(
     "upsert_scenes",
-    "Create or update scenes in bulk, matched by act + number (then name). `roles` (names) REPLACES the scene's role list when given — this breakdown determines who gets called when a rehearsal block calls the scene. Roles must already exist (use upsert_roles, or import_production which creates them).",
+    "Create or update scenes in bulk, matched by act + number (to rename or renumber a scene, use its exact act + number). `roles` (names) REPLACES the scene's role list when given — this breakdown determines who gets called when a rehearsal block calls the scene. Roles must already exist (use upsert_roles, or import_production which creates them).",
     z.object({ production, scenes: z.array(sceneInput).min(1) }),
     async (a, c) => {
       const p = await getProduction(c, a.production);
-      return { scenes: await db.transaction((tx) => upsertScenes(p.id, a.scenes, tx)) };
+      const { result, publishedEventsAffected } = await withImpact(p.id, c.userId, (tx) => upsertScenes(p.id, a.scenes, tx));
+      return { scenes: result, publishedEventsAffected };
     },
     { idempotentHint: true },
   );
@@ -160,7 +173,13 @@ export function registerCalltimeTools(server: McpServer) {
       roles: z.array(z.string()).describe("Role names or ids"),
       mode: z.enum(["replace", "add", "remove"]).default("replace"),
     }),
-    (a, c) => db.transaction((tx) => setSceneRoles(c, a.production, a.scene, a.roles, a.mode, tx)),
+    async (a, c) => {
+      const p = await getProduction(c, a.production);
+      const { result, publishedEventsAffected } = await withImpact(p.id, c.userId, (tx) =>
+        setSceneRoles(c, p.id, a.scene, a.roles, a.mode, tx),
+      );
+      return { ...result, publishedEventsAffected };
+    },
   );
 
   /* People & casting */
@@ -188,7 +207,8 @@ export function registerCalltimeTools(server: McpServer) {
     z.object({ production, assignments: z.array(assignmentInput).min(1) }),
     async (a, c) => {
       const p = await getProduction(c, a.production);
-      return { assigned: await db.transaction((tx) => assignRoles(c, p.id, a.assignments, tx)) };
+      const { result, publishedEventsAffected } = await withImpact(p.id, c.userId, (tx) => assignRoles(c, p.id, a.assignments, tx));
+      return { assigned: result, publishedEventsAffected };
     },
     { idempotentHint: true },
   );
@@ -196,13 +216,21 @@ export function registerCalltimeTools(server: McpServer) {
     "unassign_role",
     "Remove one person from one role.",
     z.object({ production, person: z.string(), role: z.string() }),
-    (a, c) => unassignRole(c, a.production, a.person, a.role),
+    async (a, c) => {
+      const p = await getProduction(c, a.production);
+      const { result, publishedEventsAffected } = await withImpact(p.id, c.userId, (tx) => unassignRole(c, p.id, a.person, a.role, tx));
+      return { ...result, publishedEventsAffected };
+    },
   );
   tool(
     "import_production",
     "Create or merge a WHOLE production in one call from a structured breakdown: production details, roles, groups, scenes (with the roles in each, by name) and cast (people with optional guardians and their roles). Idempotent — re-running with the same or corrected data updates in place and never duplicates or deletes. Runs in one transaction: on error nothing is saved. Read how_to_import_a_script for guidance.",
     importInput,
-    (a, c) => importProduction(c, a),
+    async (a, c) => {
+      const { changes, ...result } = await importProduction(c, a);
+      for (const ch of changes) scheduleChangeNotification(ch);
+      return result;
+    },
     { idempotentHint: true },
   );
 

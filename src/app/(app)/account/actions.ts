@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { guardianships, people, users } from "@/db/schema";
-import { hashPassword, normalizeEmail, requireUser, verifyPassword } from "@/lib/auth";
+import { hashPassword, normalizeEmail, requireUser, revokeOtherSessions, verifyPassword } from "@/lib/auth";
 import { createInvite } from "@/lib/invites";
 import { firstIssue, type FormState } from "../org/_components/form-state";
 import { messageForInvite } from "../org/_lib/org";
@@ -43,7 +43,8 @@ export async function changePassword(_: FormState, fd: FormData): Promise<FormSt
     return { error: "Your current password isn't right." };
   }
   await db.update(users).set({ passwordHash: await hashPassword(parsed.data.next) }).where(eq(users.id, user.id));
-  return { ok: "Password changed." };
+  await revokeOtherSessions(user.id);
+  return { ok: "Password changed. You've been signed out on other devices." };
 }
 
 /** A guardian invites another parent/guardian for one of their own kids (no admin needed). */
