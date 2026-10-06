@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
-import { AlertTriangle, Ban, Check, ChevronRight, Circle, Link2 } from "lucide-react";
+import { AlertTriangle, Ban, Check, ChevronRight, Circle, FileSpreadsheet, Link2 } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
 import { announcements, events, guardianships, people, resources, roleAssignments, roles, sceneRoles, scenes, users } from "@/db/schema";
@@ -247,6 +247,12 @@ export default async function ProductionOverview({ params }: PageProps<"/p/[prod
               </Link>
             ))}
           </div>
+          <Link
+            href={`${base}/import`}
+            className="mt-2 flex min-h-11 items-center gap-2 rounded-xl px-1 text-sm font-medium text-accent"
+          >
+            <FileSpreadsheet className="size-4" aria-hidden /> Have a spreadsheet? Import roles, scenes and cast →
+          </Link>
         </>
       ) : null}
 

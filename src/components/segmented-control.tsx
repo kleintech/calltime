@@ -44,21 +44,22 @@ export function SegmentedControl<T extends string>({
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={cn("relative grid rounded-full bg-surface-2 p-1 ring-1 ring-inset ring-line/60", className)}
+      className={cn("relative grid rounded-full bg-surface-2 p-0.5 ring-1 ring-inset ring-line/60", className)}
       style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
       onKeyDown={(e) => {
-        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+        if (!["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].includes(e.key)) return;
         e.preventDefault();
-        const next = (index + (e.key === "ArrowRight" ? 1 : options.length - 1)) % options.length;
+        const fwd = e.key === "ArrowRight" || e.key === "ArrowDown";
+        const next = (index + (fwd ? 1 : options.length - 1)) % options.length;
         select(options[next].value);
         (e.currentTarget.querySelectorAll("button")[next] as HTMLButtonElement | undefined)?.focus();
       }}
     >
       <span
         aria-hidden
-        className="absolute inset-y-1 left-1 rounded-full bg-surface shadow-card transition-transform duration-300 ease-[var(--ease-out)]"
+        className="absolute inset-y-0.5 left-0.5 rounded-full bg-surface shadow-card transition-transform duration-300 ease-[var(--ease-out)]"
         style={{
-          width: `calc((100% - 0.5rem) / ${options.length})`,
+          width: `calc((100% - 0.25rem) / ${options.length})`,
           transform: `translateX(${index * 100}%)`,
         }}
       />
@@ -74,7 +75,7 @@ export function SegmentedControl<T extends string>({
             onClick={() => select(o.value)}
             className={cn(
               "relative z-10 inline-flex items-center justify-center gap-1.5 rounded-full px-3 font-semibold whitespace-nowrap transition-colors [&_svg]:size-4",
-              size === "sm" ? "min-h-8 text-sm" : "min-h-9 text-[15px]",
+              size === "sm" ? "min-h-8 text-sm" : "min-h-10 text-[15px]",
               active ? "text-ink" : "text-muted hover:text-ink",
             )}
           >

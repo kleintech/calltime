@@ -1,5 +1,5 @@
-import Link from "next/link";
-import { cn } from "@/components/ui";
+import { NavTabs } from "@/components/tabs";
+import { Chip } from "@/components/ui";
 import type { Org } from "../_lib/org";
 
 const TABS = [
@@ -13,51 +13,30 @@ const TABS = [
 export function OrgChrome({
   org,
   orgs,
-  active,
   path = "/org",
 }: {
   org: Org;
   orgs: Org[];
+  /** Kept for call-site compatibility; the active tab now follows the URL. */
   active: (typeof TABS)[number]["key"];
   path?: string;
 }) {
   return (
-    <div className="mb-5 space-y-3">
+    <div className="mb-6 space-y-3">
       {orgs.length > 1 ? (
-        <div className="-mx-4 overflow-x-auto px-4">
-          <div className="flex w-max gap-2">
-            {orgs.map((o) => (
-              <Link
-                key={o.id}
-                href={`${path}?org=${o.id}`}
-                className={cn(
-                  "inline-flex min-h-9 items-center rounded-full border px-3 text-sm font-medium",
-                  o.id === org.id ? "border-transparent bg-ink text-bg" : "border-line bg-surface text-muted hover:text-ink",
-                )}
-              >
-                {o.name}
-              </Link>
-            ))}
-          </div>
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 scrollbar-none">
+          {orgs.map((o) => (
+            <Chip key={o.id} href={`${path}?org=${o.id}`} active={o.id === org.id}>
+              {o.name}
+            </Chip>
+          ))}
         </div>
       ) : null}
-      <nav className="-mx-4 overflow-x-auto border-b border-line px-4">
-        <ul className="flex w-max gap-1">
-          {TABS.map((t) => (
-            <li key={t.key}>
-              <Link
-                href={`${t.path}?org=${org.id}`}
-                className={cn(
-                  "inline-flex min-h-11 items-center border-b-2 px-3 text-sm font-medium",
-                  t.key === active ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink",
-                )}
-              >
-                {t.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      <NavTabs
+        aria-label="Company sections"
+        exact="/org"
+        tabs={TABS.map((t) => ({ href: `${t.path}?org=${org.id}`, label: t.label }))}
+      />
     </div>
   );
 }

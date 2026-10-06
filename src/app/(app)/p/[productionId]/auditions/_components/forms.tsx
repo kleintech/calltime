@@ -1,8 +1,9 @@
 "use client";
 
 import { Plus, Printer, Trash2 } from "lucide-react";
-import { createContext, startTransition, useActionState, useContext, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, startTransition, useActionState, useContext, useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
+import { toast } from "@/components/toast";
 import { Button, Checkbox, Field, Input, Notice, Select, Textarea, cn } from "@/components/ui";
 import type { FormState } from "../actions";
 
@@ -49,6 +50,9 @@ export function StateForm({
   hidden?: Record<string, string>;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
+  useEffect(() => {
+    if (state.ok) toast(state.ok, { tone: "success" });
+  }, [state]);
   return (
     <PendingContext value={pending}>
       <form
@@ -63,7 +67,6 @@ export function StateForm({
       >
         {hidden ? Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />) : null}
         {state.error ? <Notice tone="danger">{state.error}</Notice> : null}
-        {state.ok ? <Notice tone="success">{state.ok}</Notice> : null}
         {children}
       </form>
     </PendingContext>

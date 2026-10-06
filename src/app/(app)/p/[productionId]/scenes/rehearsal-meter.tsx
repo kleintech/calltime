@@ -30,8 +30,10 @@ export function RehearsalMeter({ d, max, started }: { d: MeterData; max: number;
       <span className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-surface-2" aria-hidden>
         <span className={cn("block h-full rounded-full", tone(d.daysAgo))} style={{ width: `${pct}%` }} />
       </span>
-      <span className={cn(started && stale ? "font-medium text-warn" : "text-muted")}>{words}</span>
-      {d.nextLabel ? <span className="truncate text-muted">· next {d.nextLabel}</span> : null}
+      <span className="min-w-0 flex-1">
+        <span className={cn(started && stale ? "font-medium text-warn" : "text-muted")}>{words}</span>
+        {d.nextLabel ? <span className="text-muted"> · next {d.nextLabel}</span> : null}
+      </span>
     </div>
   );
 }

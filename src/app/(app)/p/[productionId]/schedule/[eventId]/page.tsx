@@ -1,21 +1,23 @@
 import { inArray } from "drizzle-orm";
-import { Clock, Ellipsis, ExternalLink, Mail, MapPin, Pencil, Phone, RotateCcw, Send, StickyNote, Trash, TriangleAlert, Undo2, Users } from "lucide-react";
+import { ClipboardCheck, Clock, Eye, RefreshCw, Ellipsis, ExternalLink, Mail, MapPin, Pencil, Phone, RotateCcw, Send, StickyNote, Trash, TriangleAlert, Undo2, Users } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { people } from "@/db/schema";
-import { Avatar, Badge, Card, LinkButton, Notice, SectionTitle, buttonClass, cn } from "@/components/ui";
+import { Avatar, BackLink, Badge, Card, LinkButton, Notice, SectionTitle, buttonClass, cn } from "@/components/ui";
 import { getCoveredPersonIds, requireProductionAccess } from "@/lib/access";
 import { getEventCallSheet } from "@/lib/calls";
+import { getAckStatus, getUnacknowledgedChanges } from "@/lib/changes";
 import { getConflictsFor, getGuardianContacts } from "@/lib/schedule";
 import { KIND_META, mapsUrl, overlaps, personName, recentChange } from "@/lib/schedule-shared";
-import { fmtDay, fmtDayLong, fmtRange, fmtTime, toDateInput, toTimeInput } from "@/lib/time";
+import { dayKey, fmtDay, fmtDayLong, fmtRange, fmtTime, toDateInput, toTimeInput } from "@/lib/time";
 import { deleteEvent, setEventStatus } from "../actions";
 import { ActionButton } from "../_components/action-button";
 import { CancelEventButton } from "../_components/cancel-button";
 import { KindIcon, PersonChip, StatusBadges } from "../_components/bits";
 import { DuplicateButton } from "../_components/duplicate-button";
 import { PrintButton } from "../_components/print-button";
+import { GotItButton } from "../../../../home/_components/got-it";
 
 const PRINT_CSS = `
 @media print {
@@ -25,6 +27,8 @@ const PRINT_CSS = `
   body { background: #fff !important; color: #000 !important; }
   .print-break { break-inside: avoid; }
 }`;
+
+const coveredInCastCalled = (calls: Map<string, unknown>, covered: Set<string>) => [...covered].some((id) => calls.has(id));
 
 export default async function EventPage({ params }: PageProps<"/p/[productionId]/schedule/[eventId]">) {
   const { productionId, eventId } = await params;
@@ -38,6 +42,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
   const tz = org.timezone;
   const now = new Date();
   const changed = recentChange(ev, now);
+  const isEventDay = dayKey(ev.startsAt, tz) === dayKey(now, tz);
   const base = `/p/${productionId}/schedule`;
   const cancelled = ev.status === "cancelled";
   const calledIds = [...sheet.calls.keys()];
@@ -46,6 +51,11 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
   const coveredInCast = [...covered].filter((id) => sheet.idx.allCast.has(id));
   const coveredPeople = coveredInCast.length ? await db.select().from(people).where(inArray(people.id, coveredInCast)) : [];
   coveredPeople.sort((a, b) => a.firstName.localeCompare(b.firstName));
+  const [unackedAll, ackStatus] = await Promise.all([
+    !canEdit || coveredInCastCalled(sheet.calls, covered) ? getUnacknowledgedChanges(user.id) : Promise.resolve([]),
+    canEdit ? getAckStatus(eventId) : Promise.resolve(null),
+  ]);
+  const myUnacked = unackedAll.find((u) => u.event.id === ev.id) ?? null;
 
   // Editors: conflicts that overlap the blocks each person is called to, plus guardian contacts.
   const conflictRows = canEdit ? await getConflictsFor(calledIds, productionId, ev.startsAt, ev.endsAt) : [];
@@ -91,9 +101,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
   return (
     <div>
       <style>{PRINT_CSS}</style>
-      <Link href={base} className="no-print mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
-        ← Schedule
-      </Link>
+      <BackLink href={base} label="Schedule" className="no-print mb-2" />
 
       <div className="flex items-start gap-3">
         <KindIcon kind={ev.kind} color={cancelled ? undefined : production.accentColor} className="mt-1" />
@@ -139,12 +147,65 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
             {ev.changeNote ? ` ${ev.changeNote}` : ""}
           </Notice>
         </div>
-      ) : changed ? (
+      ) : canEdit && changed ? (
         <div className="mt-4">
           <Notice tone="warn">
             <span className="font-semibold">Changed {fmtDay(changed, tz)}.</span> {ev.changeNote ?? "Check the times below."}
           </Notice>
         </div>
+      ) : null}
+      {myUnacked ? (
+        <div className="mt-4 rounded-2xl border border-warn/40 bg-warn-soft p-4">
+          <p className="flex items-center gap-1.5 font-semibold text-warn">
+            <RefreshCw className="size-4" /> What changed
+          </p>
+          <ul className="mt-1 space-y-0.5 text-sm">
+            {myUnacked.changes.map((c) => (
+              <li key={c.revision}>
+                {c.lines.join("; ")} <span className="text-muted">· {fmtDay(c.createdAt, tz)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex justify-end">
+            <GotItButton eventId={ev.id} revision={myUnacked.latestRevision} />
+          </div>
+        </div>
+      ) : null}
+      {canEdit && ackStatus?.latestChange ? (
+        <details className="no-print mt-4 rounded-2xl border border-line bg-surface">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-4 py-2 text-sm">
+            <Eye className="size-4 shrink-0 text-muted" />
+            <span className="min-w-0 flex-1">
+              <strong>
+                {ackStatus.seenCount} of {ackStatus.total}
+              </strong>{" "}
+              affected {ackStatus.total === 1 ? "family has" : "families have"} seen the change:{" "}
+              <span className="text-muted">{ackStatus.latestChange.summary}</span>
+            </span>
+          </summary>
+          <div className="border-t border-line px-4 py-3 text-sm">
+            {ackStatus.people.filter((r) => !r.seen).length === 0 ? (
+              <p className="text-success">Everyone has seen it.</p>
+            ) : (
+              <>
+                <p className="mb-1 font-medium">Not seen yet</p>
+                <ul className="space-y-1">
+                  {ackStatus.people
+                    .filter((r) => !r.seen)
+                    .map((r) => (
+                      <li key={r.personId}>
+                        {r.name}
+                        <span className="text-muted">
+                          {" "}
+                          · {r.reachable ? r.accounts.map((a) => a.name).join(", ") : "no account linked — call or text"}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </details>
       ) : null}
       {ev.notes ? (
         <div className="mt-4">
@@ -159,9 +220,19 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
 
       {canEdit ? (
         <div className="no-print mt-5 flex flex-wrap items-start gap-2">
-          <LinkButton href={`${base}/${ev.id}/edit`}>
+          {ev.status !== "draft" && isEventDay ? (
+            <LinkButton href={`${base}/${ev.id}/attendance`}>
+              <ClipboardCheck className="size-4" /> Take attendance
+            </LinkButton>
+          ) : null}
+          <LinkButton href={`${base}/${ev.id}/edit`} variant={isEventDay && ev.status !== "draft" ? "secondary" : "primary"}>
             <Pencil className="size-4" /> Edit
           </LinkButton>
+          {ev.status !== "draft" && !isEventDay && ev.startsAt < now ? (
+            <LinkButton href={`${base}/${ev.id}/attendance`} variant="ghost">
+              <ClipboardCheck className="size-4" /> Attendance
+            </LinkButton>
+          ) : null}
           {ev.status === "draft" ? (
             <ActionButton
               action={setEventStatus.bind(null, productionId, ev.id, "publish", undefined)}

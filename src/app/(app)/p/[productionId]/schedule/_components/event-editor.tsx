@@ -432,13 +432,13 @@ export function EventEditor({
       ) : null}
 
       {/* ── Save bar ── */}
-      <div className="sticky bottom-[calc(88px+env(safe-area-inset-bottom))] z-30 mt-6 md:bottom-4">
+      <div className="sticky bottom-[calc(var(--bottom-chrome)+env(safe-area-inset-bottom)+10px)] z-30 mt-6 md:bottom-4">
         {error ? (
           <div className="mb-2">
             <Notice tone="danger">{error}</Notice>
           </div>
         ) : null}
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface/95 p-2 shadow-lg backdrop-blur">
+        <div className="glass flex flex-wrap items-center gap-2 rounded-2xl border border-glass-line p-2.5 shadow-overlay">
           {status === "published" ? (
             <>
               <p className="min-w-0 flex-1 px-2 text-xs text-muted">Changes to times, places or calls show families an “Updated” badge.</p>

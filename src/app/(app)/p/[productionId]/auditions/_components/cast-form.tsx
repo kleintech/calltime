@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { CopyButton } from "@/components/copy-button";
+import { toast } from "@/components/toast";
 import { Checkbox, Notice, Select } from "@/components/ui";
 import { castAction, generateInvites, type CastState, type InviteLink } from "../actions";
 import { SubmitButton } from "./forms";
@@ -26,10 +27,12 @@ export function InviteLinks({ invites }: { invites: InviteLink[] }) {
 }
 
 function Result({ state }: { state: CastState }) {
+  useEffect(() => {
+    if (state.ok) toast(state.ok, { tone: "success" });
+  }, [state]);
   return (
     <>
       {state.error ? <Notice tone="danger">{state.error}</Notice> : null}
-      {state.ok ? <Notice tone="success">{state.ok}</Notice> : null}
       {state.invites?.length ? <InviteLinks invites={state.invites} /> : null}
     </>
   );

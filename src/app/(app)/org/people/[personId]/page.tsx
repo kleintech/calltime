@@ -19,6 +19,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import { ActionForm, SubmitButton } from "../../_components/action-form";
+import { Disclosure } from "../../_components/disclosure";
 import { OrgChrome } from "../../_components/org-chrome";
 import { PendingInvites } from "../../_components/pending-invites";
 import { getAdminOrgs, getPendingInvites, orgHref, personName, UUID_RE } from "../../_lib/org";
@@ -190,7 +191,7 @@ export default async function PersonPage({ params }: PageProps<"/org/people/[per
           )}
 
           <div className="mt-3 grid gap-3">
-            <details className="rounded-2xl border border-line bg-surface" open={guardianLinks.length === 0}>
+            <Disclosure className="rounded-2xl border border-line bg-surface" defaultOpen={guardianLinks.length === 0}>
               <summary className="flex min-h-12 cursor-pointer list-none items-center px-4 font-medium">+ Add a guardian</summary>
               <div className="border-t border-line p-4">
                 <ActionForm action={addGuardian} submitLabel="Add guardian" resetOnSuccess pendingLabel="Adding…">
@@ -211,7 +212,7 @@ export default async function PersonPage({ params }: PageProps<"/org/people/[per
                   </div>
                 </ActionForm>
               </div>
-            </details>
+            </Disclosure>
             {linkable.length ? (
               <details className="rounded-2xl border border-line bg-surface">
                 <summary className="flex min-h-12 cursor-pointer list-none items-center px-4 font-medium">

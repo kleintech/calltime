@@ -3,7 +3,7 @@ import { TZDate } from "@date-fns/tz";
 import { addDays } from "date-fns";
 import { and, asc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/db";
-import { blockCalls, conflicts, eventBlocks, events, guardianships, people, users } from "@/db/schema";
+import { attendance, blockCalls, conflicts, eventBlocks, events, guardianships, people, users } from "@/db/schema";
 import { loadCastIndex, resolveTarget, sceneLabel, targetLabel, type ProductionCastIndex } from "./calls";
 import { callKey, personName, sceneShort, type CallRef, type EditorOptions, type EventInput } from "./schedule-shared";
 import { toDateInput, toTimeInput } from "./time";
@@ -154,29 +154,6 @@ export async function getEventBlocks(eventId: string) {
   }));
 }
 
-type FingerprintBlock = { startsAt: Date; endsAt: Date; title: string | null; location: string | null; calls: CallRef[] };
-
-/**
- * What families care about: time, place, and who's called for what. A change here on a published
- * event bumps events.revision (drives "Updated" badges and the ICS SEQUENCE).
- */
-export function materialFingerprint(e: { startsAt: Date; endsAt: Date; location: string | null }, blocks: FingerprintBlock[]) {
-  return JSON.stringify({
-    s: e.startsAt.toISOString(),
-    e: e.endsAt.toISOString(),
-    l: e.location ?? "",
-    b: blocks
-      .map((b) => ({
-        s: b.startsAt.toISOString(),
-        e: b.endsAt.toISOString(),
-        t: b.title ?? "",
-        l: b.location ?? "",
-        c: b.calls.map(callKey).sort(),
-      }))
-      .sort((x, y) => (x.s + x.e + x.t).localeCompare(y.s + y.e + y.t)),
-  });
-}
-
 /** Shift an instant by whole days keeping its wall-clock time in tz (DST-safe). */
 export function shiftDays(d: Date, days: number, tz: string) {
   return new Date(addDays(new TZDate(d.getTime(), tz), days).getTime());
@@ -265,4 +242,65 @@ export function eventToInput(
       calls: b.calls,
     })),
   };
+}
+
+/* ───────────── Attendance ───────────── */
+
+export type AttendanceStatus = (typeof attendance.$inferSelect)["status"];
+
+/**
+ * Mark people who reported a conflict overlapping their call as excused, unless someone already
+ * marked them. Idempotent; run when the attendance sheet opens.
+ */
+export async function ensureExcusedForConflicts(
+  eventId: string,
+  productionId: string,
+  calls: Map<string, { callAt: Date; releaseAt: Date }>,
+  markedByUserId: string,
+) {
+  const ids = [...calls.keys()];
+  if (ids.length === 0) return;
+  const from = new Date(Math.min(...[...calls.values()].map((c) => c.callAt.getTime())));
+  const to = new Date(Math.max(...[...calls.values()].map((c) => c.releaseAt.getTime())));
+  const cs = await getConflictsFor(ids, productionId, from, to);
+  const rows = cs
+    .filter((c) => {
+      const call = calls.get(c.personId);
+      return call && c.startsAt < call.releaseAt && call.callAt < c.endsAt;
+    })
+    .map((c) => ({ eventId, personId: c.personId, status: "excused" as const, markedByUserId, note: c.note ? `Conflict: ${c.note}` : "Reported a conflict" }));
+  if (rows.length) await db.insert(attendance).values(dedupeBy(rows, (r) => r.personId)).onConflictDoNothing();
+}
+
+function dedupeBy<T>(xs: T[], k: (x: T) => string) {
+  const seen = new Set<string>();
+  return xs.filter((x) => (seen.has(k(x)) ? false : (seen.add(k(x)), true)));
+}
+
+export type AttendanceSummary = {
+  present: number;
+  late: number;
+  absent: number;
+  excused: number;
+  /** Events this person was marked for. */
+  marked: number;
+  lastAbsentAt: Date | null;
+};
+
+/** Per-person attendance counts across a production's events (personId → summary). */
+export async function getAttendanceSummary(productionId: string): Promise<Map<string, AttendanceSummary>> {
+  const rows = await db
+    .select({ personId: attendance.personId, status: attendance.status, startsAt: events.startsAt })
+    .from(attendance)
+    .innerJoin(events, eq(events.id, attendance.eventId))
+    .where(eq(events.productionId, productionId));
+  const out = new Map<string, AttendanceSummary>();
+  for (const r of rows) {
+    const s = out.get(r.personId) ?? { present: 0, late: 0, absent: 0, excused: 0, marked: 0, lastAbsentAt: null };
+    s[r.status] += 1;
+    s.marked += 1;
+    if (r.status === "absent" && (!s.lastAbsentAt || r.startsAt > s.lastAbsentAt)) s.lastAbsentAt = r.startsAt;
+    out.set(r.personId, s);
+  }
+  return out;
 }

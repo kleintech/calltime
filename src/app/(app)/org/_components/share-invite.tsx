@@ -39,18 +39,18 @@ export function ShareInvite({ url, message, compact = false }: { url: string; me
         {canShare ? (
           <button
             type="button"
-            className={buttonClass("primary")}
+            className={buttonClass("primary", undefined, compact ? "sm" : "md")}
             onClick={() => navigator.share({ text: compact ? message : text }).catch(() => {})}
           >
             <Share2 className="size-4" /> Share invite
           </button>
         ) : (
-          <button type="button" className={buttonClass(compact ? "secondary" : "primary")} onClick={() => copy("msg")}>
+          <button type="button" className={buttonClass(compact ? "secondary" : "primary", undefined, compact ? "sm" : "md")} onClick={() => copy("msg")}>
             {copied === "msg" ? <Check className="size-4" /> : <Copy className="size-4" />}
             {copied === "msg" ? "Copied" : "Copy message"}
           </button>
         )}
-        <button type="button" className={buttonClass("secondary")} onClick={() => copy("link")}>
+        <button type="button" className={buttonClass(compact ? "ghost" : "secondary", undefined, compact ? "sm" : "md")} onClick={() => copy("link")}>
           {copied === "link" ? <Check className="size-4" /> : <Copy className="size-4" />}
           {copied === "link" ? "Copied" : "Copy link only"}
         </button>

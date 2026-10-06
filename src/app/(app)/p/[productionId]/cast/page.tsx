@@ -3,8 +3,9 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
 import { creativeTeam, guardianships, people, roleAssignments, roles, users } from "@/db/schema";
-import { Avatar, Badge, Card, EmptyState, List, ListRow, SectionTitle } from "@/components/ui";
+import { Avatar, Badge, Card, EmptyState, LinkButton, List, ListRow, SectionTitle } from "@/components/ui";
 import { requireProductionAccess } from "@/lib/access";
+import { getAttendanceSummary } from "@/lib/schedule";
 import { personName } from "@/lib/production-queries";
 import { assignRole } from "./actions";
 import { AssignForm } from "./forms";
@@ -91,7 +92,7 @@ export default async function CastPage({ params, searchParams }: PageProps<"/p/[
 
   /* ─────────── Editor view ─────────── */
   const castIds = [...byPerson.keys()];
-  const [guardianRows, orgPeople] = await Promise.all([
+  const [guardianRows, orgPeople, attendanceByPerson] = await Promise.all([
     castIds.length
       ? db
           .select({ minorId: guardianships.minorId, guardian: people })
@@ -104,6 +105,7 @@ export default async function CastPage({ params, searchParams }: PageProps<"/p/[
       .from(people)
       .where(eq(people.orgId, org.id))
       .orderBy(asc(people.lastName), asc(people.firstName)),
+    getAttendanceSummary(productionId),
   ]);
   const guardiansOf = new Map<string, (typeof people.$inferSelect)[]>();
   for (const g of guardianRows) guardiansOf.set(g.minorId, [...(guardiansOf.get(g.minorId) ?? []), g.guardian]);
@@ -153,6 +155,18 @@ export default async function CastPage({ params, searchParams }: PageProps<"/p/[
                       </Badge>
                     ))}
                   </div>
+                  {(() => {
+                    const a = attendanceByPerson.get(e.person.id);
+                    if (!a || (!a.absent && !a.late)) return null;
+                    return (
+                      <p className="mt-1 text-xs">
+                        {a.absent ? <span className="font-medium text-danger">{a.absent} absent</span> : null}
+                        {a.absent && a.late ? <span className="text-muted"> · </span> : null}
+                        {a.late ? <span className="font-medium text-warn">{a.late} late</span> : null}
+                        <span className="text-muted"> of {a.marked} marked</span>
+                      </p>
+                    );
+                  })()}
                   {gs.length ? (
                     <p className="mt-1 truncate text-xs text-muted">Guardian: {gs.map((g) => personName(g)).join(", ")}</p>
                   ) : e.person.isMinor ? (
@@ -165,7 +179,9 @@ export default async function CastPage({ params, searchParams }: PageProps<"/p/[
           })}
         </List>
       ) : (
-        <EmptyState title="Nobody cast yet" body="Add people to roles below. Minors can be added with a parent or guardian." />
+        <EmptyState title="Nobody cast yet" body="Add people to roles below. Minors can be added with a parent or guardian."
+          action={<LinkButton href={`${base}/import`} variant="secondary">Import a cast list</LinkButton>}
+        />
       )}
 
       <div id="add" className="scroll-mt-4">

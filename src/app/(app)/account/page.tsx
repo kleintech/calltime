@@ -1,13 +1,16 @@
 import { eq, inArray } from "drizzle-orm";
-import { CalendarPlus, ChevronRight, LogOut, Shield } from "lucide-react";
+import { CalendarPlus, ChevronRight, HandHeart, LogOut, Shield } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
 import { guardianships, organizations, people } from "@/db/schema";
 import { Avatar, Badge, Button, Card, Field, Input, List, PageHeader, SectionTitle } from "@/components/ui";
-import { getUserOrgs } from "@/lib/access";
+import { getUserOrgs, getUserProductions } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
+import { vapidPublicKey } from "@/lib/push";
+import { countOpenShifts, fmtWhen, getMySignups, isUpcoming } from "@/lib/volunteers";
 import { ActionForm } from "../org/_components/action-form";
 import { currentRoles } from "../org/_lib/org";
+import { PushToggle } from "./_components/push-toggle";
 import { changePassword, inviteCoGuardian, updateProfile } from "./actions";
 
 export const metadata = { title: "Me" };
@@ -31,6 +34,11 @@ export default async function AccountPage() {
         .innerJoin(organizations, eq(organizations.id, people.orgId))
         .where(inArray(guardianships.guardianId, ownIds))
     : [];
+  const [shows, mySignups] = await Promise.all([getUserProductions(user), getMySignups(user.id)]);
+  const activeShows = shows.filter((s) => s.production.status !== "closed");
+  const openCounts = await countOpenShifts(activeShows.map((s) => s.production.id));
+  const myUpcoming = mySignups.filter((m) => isUpcoming(m.shift));
+  const tzOf = new Map([...own, ...wards].map((r) => [r.org.id, r.org.timezone]));
   const multiOrg = new Set([...own, ...wards].map((r) => r.org.id)).size > 1;
 
   const seen = new Set<string>();
@@ -123,6 +131,52 @@ export default async function AccountPage() {
         <p className="mt-2 text-sm text-muted">Calls for everyone here show up on Calls. Ask the company office if someone is missing.</p>
       )}
 
+      {myUpcoming.length || openCounts.size ? (
+        <>
+          <SectionTitle>Volunteering</SectionTitle>
+          <List>
+            {myUpcoming.slice(0, 3).map((m) => (
+              <Link
+                key={m.shift.id}
+                href={`/p/${m.production.id}/volunteers`}
+                className="flex min-h-14 items-center gap-3 px-4 py-3 hover:bg-surface-2"
+              >
+                <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success">
+                  <HandHeart className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">{m.shift.title}</div>
+                  <div className="text-sm text-muted">
+                    {fmtWhen(m.shift, tzOf.get(m.production.orgId) ?? "America/New_York")} · {m.production.title}
+                  </div>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted" />
+              </Link>
+            ))}
+            {activeShows
+              .filter((s) => openCounts.get(s.production.id))
+              .map((s) => (
+                <Link
+                  key={s.production.id}
+                  href={`/p/${s.production.id}/volunteers`}
+                  className="flex min-h-14 items-center gap-3 px-4 py-3 hover:bg-surface-2"
+                >
+                  <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-gold-soft text-gold">
+                    <HandHeart className="size-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">
+                      {openCounts.get(s.production.id)} volunteer shift{openCounts.get(s.production.id) === 1 ? "" : "s"} need help
+                    </div>
+                    <div className="text-sm text-muted">{s.production.title}</div>
+                  </div>
+                  <ChevronRight className="size-4 shrink-0 text-muted" />
+                </Link>
+              ))}
+          </List>
+        </>
+      ) : null}
+
       <SectionTitle>Calendar</SectionTitle>
       <Link href="/home/calendar" className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-4 hover:bg-surface-2">
         <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-gold-soft text-gold">
@@ -134,6 +188,11 @@ export default async function AccountPage() {
         </span>
         <ChevronRight className="size-4 shrink-0 text-muted" />
       </Link>
+
+      <SectionTitle>Notifications</SectionTitle>
+      <Card>
+        <PushToggle publicKey={vapidPublicKey()} />
+      </Card>
 
       <SectionTitle>Account</SectionTitle>
       <Card>

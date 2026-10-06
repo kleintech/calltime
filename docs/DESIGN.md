@@ -78,7 +78,10 @@ counts. Section labels: `<SectionTitle>` (13px caps, tracked). Big section headi
   Platform Admin is rail-only on desktop and a shield icon in the phone top bar.
 - **Production pages** get a poster header (production color wash, title, status + "Opens in N days") that
   collapses to one line on sub-pages on phones, and a **sticky pill tab strip**: editors see
-  Overview · Schedule · Cast · Scenes · More (Auditions moves forward during auditions/planning).
+  Schedule · Cast · Scenes · More (Overview, Roles, Breakdown, Resources, Notes, Reports, Volunteers,
+  Auditions, Team, Settings); during `auditions` status the strip is Auditions · Schedule · Cast · More (Scenes moves into More). Cast/families see
+  Overview · Schedule · Cast & Team · More (Materials, Notes, Volunteer). Tab sets live in
+  `src/app/(app)/p/[productionId]/layout.tsx`.
 - Don't put page-level `<h1>` padding hacks or your own bottom padding for the tab bar — the shell does it.
 - Anything with `data-app-chrome` is hidden when printing.
 

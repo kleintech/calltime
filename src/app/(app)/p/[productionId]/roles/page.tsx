@@ -1,9 +1,10 @@
 import { asc, eq, inArray } from "drizzle-orm";
-import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Drama, Plus } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
 import { people, roleAssignments, roleGroupMembers, roleGroups, roles, sceneRoles } from "@/db/schema";
-import { Badge, Card, EmptyState, SectionTitle } from "@/components/ui";
+import { Badge, Button, EmptyState, LinkButton, SectionTitle } from "@/components/ui";
+import { Sheet } from "@/components/sheet";
 import { requireProductionEditor } from "@/lib/access";
 import { personName } from "@/lib/production-queries";
 import { IconSubmit } from "@/app/(app)/productions/_components/form";
@@ -38,10 +39,49 @@ export default async function RolesPage({ params }: PageProps<"/p/[productionId]
   const roleById = new Map(roleRows.map((r) => [r.id, r]));
   const roleOptions = roleRows.map((r) => ({ id: r.id, name: r.name, kind: r.kind }));
 
+  const addRole = (
+    <Sheet
+      trigger={
+        <Button variant={roleRows.length ? "soft" : "primary"} size={roleRows.length ? "sm" : "md"}>
+          <Plus /> Add role
+        </Button>
+      }
+      title="Add a role"
+      description="Stays open so you can add the next one."
+    >
+      <RoleForm action={createRole.bind(null, productionId)} submitLabel="Add role" resetOnSuccess />
+    </Sheet>
+  );
+
   return (
     <div>
+      {roleRows.length ? (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[15px] text-muted">
+            {roleRows.length} role{roleRows.length === 1 ? "" : "s"} · tap one to edit
+          </p>
+          <div className="flex items-center gap-1">
+            <LinkButton href={`${base}/import`} variant="ghost" size="sm">
+              Import
+            </LinkButton>
+            {addRole}
+          </div>
+        </div>
+      ) : null}
       {roleRows.length === 0 ? (
-        <EmptyState title="No roles yet" body="Add every character and ensemble part. Leads first is a good habit." />
+        <EmptyState
+          icon={<Drama />}
+          title="No roles yet"
+          body="Add every character and ensemble part. Leads first is a good habit."
+          action={
+            <>
+              {addRole}
+              <LinkButton href={`${base}/import`} variant="secondary">
+                Import from a spreadsheet
+              </LinkButton>
+            </>
+          }
+        />
       ) : (
         ROLE_KINDS.map((k) => {
           const list = roleRows.filter((r) => r.kind === k.value);
@@ -51,7 +91,7 @@ export default async function RolesPage({ params }: PageProps<"/p/[productionId]
               <SectionTitle>
                 {k.label} · {list.length}
               </SectionTitle>
-              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line/80 bg-surface shadow-card">
                 {list.map((r, i) => {
                   const who = assigns
                     .filter((a) => a.roleId === r.id)
@@ -101,12 +141,23 @@ export default async function RolesPage({ params }: PageProps<"/p/[productionId]
         })
       )}
 
-      <SectionTitle>Add a role</SectionTitle>
-      <Card>
-        <RoleForm action={createRole.bind(null, productionId)} submitLabel="Add role" resetOnSuccess />
-      </Card>
-
-      <SectionTitle>Role groups</SectionTitle>
+      <SectionTitle
+        action={
+          <Sheet
+            trigger={
+              <Button variant="ghost" size="sm">
+                <Plus /> New group
+              </Button>
+            }
+            title="New role group"
+            description="Bundle roles you call together, like “Pirates” or “Daughters”."
+          >
+            <GroupForm action={createGroup.bind(null, productionId)} roles={roleOptions} submitLabel="Create group" resetOnSuccess />
+          </Sheet>
+        }
+      >
+        Role groups
+      </SectionTitle>
       <p className="-mt-1 mb-3 text-sm text-muted">
         Bundle roles you often call together (“Pirates”, “Daughters”, “Dance ensemble”) so a rehearsal block can call the whole group.
       </p>
@@ -122,7 +173,7 @@ export default async function RolesPage({ params }: PageProps<"/p/[productionId]
               <Link
                 key={g.id}
                 href={`${base}/roles/groups/${g.id}`}
-                className="block rounded-2xl border border-line bg-surface p-4 hover:bg-surface-2"
+                className="block rounded-2xl border border-line/80 bg-surface p-4 shadow-card transition-shadow hover:shadow-raised"
               >
                 <div className="flex items-center gap-2">
                   <span className="size-3 shrink-0 rounded-full border border-line" style={{ background: g.color ?? "transparent" }} />
@@ -142,14 +193,6 @@ export default async function RolesPage({ params }: PageProps<"/p/[productionId]
           })}
         </div>
       ) : null}
-      <details className="group mt-3 rounded-2xl border border-line bg-surface">
-        <summary className="flex min-h-12 cursor-pointer list-none items-center px-4 text-sm font-semibold text-accent">
-          + New group
-        </summary>
-        <div className="border-t border-line p-4">
-          <GroupForm action={createGroup.bind(null, productionId)} roles={roleOptions} submitLabel="Create group" resetOnSuccess />
-        </div>
-      </details>
     </div>
   );
 }

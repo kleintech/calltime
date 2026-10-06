@@ -17,6 +17,7 @@ import {
   type Shift,
 } from "@/lib/volunteers";
 import { ActionForm, SubmitButton } from "@/app/(app)/org/_components/action-form";
+import { Disclosure } from "@/app/(app)/org/_components/disclosure";
 import { createShift, deleteShift, quickCreateShifts, removeSignup, saveVolunteerSettings, updateShift } from "./actions";
 import { SignupButton } from "./signup-button";
 
@@ -51,7 +52,7 @@ async function FamilyView({ ctx }: { ctx: Ctx }) {
       <EmptyState
         icon={<HandHeart />}
         title="No volunteer shifts yet"
-        body={`When the ${production.title} team needs helpers — concessions, costumes, snacks — the shifts show up here and you can sign up in one tap.`}
+        body={`When the creative team for ${production.title} needs helpers — concessions, costumes, snacks — the shifts show up here and you can sign up in one tap.`}
       />
     );
   }
@@ -231,7 +232,7 @@ async function EditorView({ ctx }: { ctx: Ctx }) {
 
       <SectionTitle>Add shifts</SectionTitle>
       <div className="space-y-3">
-        <details className="rounded-2xl border border-line bg-surface" open={shifts.length === 0}>
+        <Disclosure className="rounded-2xl border border-line bg-surface" defaultOpen={shifts.length === 0}>
           <summary className="flex min-h-12 cursor-pointer list-none items-center px-4 font-semibold">+ Add several at once</summary>
           <div className="border-t border-line p-4">
             <ActionForm action={quickCreateShifts} submitLabel="Add shifts" pendingLabel="Adding…" resetOnSuccess>
@@ -267,7 +268,7 @@ async function EditorView({ ctx }: { ctx: Ctx }) {
               </div>
             </ActionForm>
           </div>
-        </details>
+        </Disclosure>
         <details className="rounded-2xl border border-line bg-surface">
           <summary className="flex min-h-12 cursor-pointer list-none items-center px-4 font-semibold">+ Add one shift</summary>
           <div className="border-t border-line p-4">

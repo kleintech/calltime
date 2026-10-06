@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { redirect } from "next/navigation";
 import { Badge, EmptyState, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { getUserOrgs, getUserProductions } from "@/lib/access";
@@ -9,20 +9,19 @@ export default async function ProductionsPage() {
   const user = await requireUser();
   const [list, orgs] = await Promise.all([getUserProductions(user), getUserOrgs(user)]);
   const isAdmin = orgs.some((o) => o.role === "admin");
-  // Families in exactly one current show skip the list of one and land on it.
-  const active = list.filter((p) => p.production.status !== "closed");
-  if (!isAdmin && active.length === 1 && list.every((p) => p.relation === "cast")) redirect(`/p/${active[0].production.id}`);
+  // A family with exactly one show in total (closed ones included) skips the list of one. With past
+  // shows too, they get the list so the closed ones stay reachable under "Past shows".
+  if (!isAdmin && list.length === 1 && list[0].relation === "cast") redirect(`/p/${list[0].production.id}`);
   const multiOrg = orgs.length > 1;
   const orgName = new Map(orgs.map((o) => [o.org.id, o.org.name]));
 
-  const order = (s: string) => (s === "closed" ? 1 : 0);
-  const sorted = [...list].sort(
-    (a, b) => order(a.production.status) - order(b.production.status) || a.production.title.localeCompare(b.production.title),
-  );
+  const sorted = [...list].sort((a, b) => a.production.title.localeCompare(b.production.title));
+  const current = sorted.filter((p) => p.production.status !== "closed");
+  const past = sorted.filter((p) => p.production.status === "closed");
   const groups = [
-    { key: "creative", title: "On the creative team", items: sorted.filter((p) => p.relation === "creative") },
-    { key: "cast", title: "In the cast", items: sorted.filter((p) => p.relation === "cast") },
-    { key: "admin", title: isAdmin ? "Company productions" : "Productions", items: sorted.filter((p) => p.relation === "admin") },
+    { key: "creative", title: "On the creative team", items: current.filter((p) => p.relation === "creative") },
+    { key: "cast", title: "In the cast", items: current.filter((p) => p.relation === "cast") },
+    { key: "admin", title: isAdmin ? "Company productions" : "Productions", items: current.filter((p) => p.relation === "admin") },
   ].filter((g) => g.items.length > 0);
 
   return (
@@ -38,7 +37,7 @@ export default async function ProductionsPage() {
           ) : null
         }
       />
-      {groups.length === 0 ? (
+      {groups.length === 0 && past.length === 0 ? (
         <EmptyState
           title="No shows yet"
           body={
@@ -69,6 +68,31 @@ export default async function ProductionsPage() {
           </section>
         ))
       )}
+      {groups.length === 0 && past.length > 0 ? (
+        <p className="text-sm text-muted">No current shows. Past shows are below.</p>
+      ) : null}
+      {past.length ? (
+        <details className="group mt-6 rounded-2xl border border-line bg-surface" open={groups.length === 0}>
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 text-sm font-semibold">
+            <span>Past shows · {past.length}</span>
+            <ChevronDown className="size-4 text-muted transition group-open:rotate-180" aria-hidden />
+          </summary>
+          <div className="grid gap-3 border-t border-line p-3 sm:grid-cols-2">
+            {past.map(({ production, title }) => (
+              <ProductionCard
+                key={production.id}
+                production={production}
+                extra={
+                  <>
+                    {title ? <Badge tone="gold">{title}</Badge> : null}
+                    {multiOrg ? <span className="text-xs text-muted">{orgName.get(production.orgId)}</span> : null}
+                  </>
+                }
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }

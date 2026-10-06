@@ -1,10 +1,9 @@
 import { and, eq, ne, sql } from "drizzle-orm";
-import Link from "next/link";
 import { db } from "@/db";
 import { auditionSignups } from "@/db/schema";
 import { requireProductionEditor } from "@/lib/access";
 import { getAuditionForProduction } from "@/lib/auditions";
-import { Badge } from "@/components/ui";
+import { BackLink, Badge } from "@/components/ui";
 import { SubTabs } from "../_components/sub-tabs";
 
 export default async function AuditionLayout({ children, params }: LayoutProps<"/p/[productionId]/auditions/[auditionId]">) {
@@ -23,16 +22,20 @@ export default async function AuditionLayout({ children, params }: LayoutProps<"
   return (
     <div>
       <div className="mb-4 print:hidden">
-        <Link href={`/p/${productionId}/auditions`} className="text-sm text-muted hover:text-ink">
-          ← All auditions
-        </Link>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <h2 className="font-display text-xl font-semibold tracking-tight">{audition.title}</h2>
-          <Badge tone={audition.isOpen ? "success" : "neutral"}>{audition.isOpen ? "Open" : "Closed"}</Badge>
-          <a href={`/audition/${audition.slug}`} target="_blank" className="text-sm text-accent hover:underline">
-            /audition/{audition.slug}
-          </a>
+        <BackLink href={`/p/${productionId}/auditions`} label="All auditions" />
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h2 className="font-display text-2xl font-semibold tracking-tight">{audition.title}</h2>
+          <Badge tone={audition.isOpen ? "success" : "neutral"} dot>
+            {audition.isOpen ? "Open" : "Closed"}
+          </Badge>
         </div>
+        <a
+          href={`/audition/${audition.slug}`}
+          target="_blank"
+          className="-my-2 inline-flex min-h-11 items-center text-sm font-medium text-accent hover:underline"
+        >
+          Public page: /audition/{audition.slug} ↗
+        </a>
       </div>
       <SubTabs
         base={base}

@@ -12,7 +12,9 @@ import { buttonClass, cn, type ButtonVariant } from "./ui";
  *   <Sheet trigger={<Button>Add block</Button>} title="Add block">…form…</Sheet>
  * Controlled — from a client component:
  *   <Sheet open={open} onOpenChange={setOpen} title="Publish 3 rehearsals?">…</Sheet>
- * Inside, <SheetClose>Not yet</SheetClose> closes it; `closeOnSubmit` closes after any form submits.
+ * Inside, <SheetClose>Not yet</SheetClose> closes it. `closeOnSubmit` closes as soon as a form inside
+ * submits (before a server action resolves) — for actions that can fail validation, use controlled
+ * mode and close on success instead.
  * `footer` renders in a sticky bottom area (primary action last, full width on phones).
  */
 export function Sheet({
@@ -71,12 +73,16 @@ export function Sheet({
         aria-describedby={description ? descId : undefined}
         onClose={() => setOpen(false)}
         onClick={(e) => {
-          // Click on the backdrop (the dialog element itself, outside the panel) closes.
-          if (e.target === e.currentTarget) setOpen(false);
+          // Close only for clicks that land outside the panel's box (i.e. on ::backdrop). A target
+          // check alone would also fire for the panel's own padding or a drag-select that ends outside.
+          if (e.target !== e.currentTarget) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+          if (!inside) setOpen(false);
         }}
         onSubmit={closeOnSubmit ? () => setTimeout(() => setOpen(false), 0) : undefined}
         className={cn(
-          "ct-sheet flex-col overflow-hidden border border-line/80 bg-surface p-0 text-ink shadow-overlay open:flex backdrop:bg-transparent",
+          "ct-sheet flex-col overflow-hidden border border-line/80 bg-surface p-0 text-ink shadow-overlay open:flex",
           className,
         )}
       >
@@ -96,7 +102,7 @@ export function Sheet({
             type="button"
             aria-label="Close"
             onClick={() => setOpen(false)}
-            className="-mr-2 -mt-1 inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-muted transition-colors hover:text-ink"
+            className="-mr-2 -mt-1.5 inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-surface-2 text-muted transition-colors hover:text-ink"
           >
             <X className="size-5" />
           </button>

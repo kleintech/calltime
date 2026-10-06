@@ -704,6 +704,10 @@ export const eventChanges = pgTable(
     /** The event's revision after this change. */
     revision: integer("revision").notNull(),
     summary: text("summary").notNull(),
+    /** People whose own call changed (time, reasons, location, added/removed, cancelled). Only their families are notified. */
+    affectedPersonIds: jsonb("affected_person_ids").$type<string[]>().notNull().default([]),
+    /** personId → what changed for them ("Now called 5:30–7:00 PM (was 6:00–7:30 PM)"). */
+    personSummaries: jsonb("person_summaries").$type<Record<string, string>>().notNull().default({}),
     changedByUserId: uuid("changed_by_user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
@@ -727,4 +731,111 @@ export const changeAcks = pgTable(
     ackedAt: timestamp("acked_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.eventId] }), index("change_acks_event_idx").on(t.eventId)],
+);
+
+/* ───────────────────────── Attendance ───────────────────────── */
+
+export const attendanceStatus = pgEnum("attendance_status", ["present", "late", "absent", "excused"]);
+
+/** Check-in / sign-out for one person at one event (taken by the stage manager on the call sheet). */
+export const attendance = pgTable(
+  "attendance",
+  {
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    status: attendanceStatus("status").notNull(),
+    checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
+    checkedOutAt: timestamp("checked_out_at", { withTimezone: true }),
+    /** Who collected a minor at sign-out (free text, usually a guardian's name). */
+    pickedUpBy: text("picked_up_by"),
+    markedByUserId: uuid("marked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    note: text("note"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.eventId, t.personId] }), index("attendance_person_idx").on(t.personId)],
+);
+
+/* ───────────────────────── Notes & reports ───────────────────────── */
+
+/**
+ * A director/SM note to one or more performers ("cheat downstage on 'I am the very model'").
+ * category: "blocking" | "line" | "music" | "choreo" | "character" | "general".
+ * Visible to each recipient and (for minors) their guardians.
+ */
+export const actorNotes = pgTable(
+  "actor_notes",
+  {
+    id: id(),
+    productionId: uuid("production_id")
+      .notNull()
+      .references(() => productions.id, { onDelete: "cascade" }),
+    eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+    sceneId: uuid("scene_id").references(() => scenes.id, { onDelete: "set null" }),
+    authorUserId: uuid("author_user_id").references(() => users.id, { onDelete: "set null" }),
+    category: text("category").notNull().default("general"),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("actor_notes_production_idx").on(t.productionId, t.createdAt)],
+);
+
+export const actorNoteRecipients = pgTable(
+  "actor_note_recipients",
+  {
+    noteId: uuid("note_id")
+      .notNull()
+      .references(() => actorNotes.id, { onDelete: "cascade" }),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.noteId, t.personId] }), index("actor_note_recipients_person_idx").on(t.personId)],
+);
+
+/** Stage manager's report for one event. Published = shared with the creative team (never families). */
+export const rehearsalReports = pgTable("rehearsal_reports", {
+  id: id(),
+  productionId: uuid("production_id")
+    .notNull()
+    .references(() => productions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id")
+    .notNull()
+    .unique()
+    .references(() => events.id, { onDelete: "cascade" }),
+  authorUserId: uuid("author_user_id").references(() => users.id, { onDelete: "set null" }),
+  summary: text("summary"),
+  scenesCovered: jsonb("scenes_covered").$type<string[]>().notNull().default([]),
+  departmentNotes: jsonb("department_notes")
+    .$type<{ costumes?: string; props?: string; set?: string; lighting?: string; sound?: string; music?: string; other?: string }>()
+    .notNull()
+    .default({}),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+});
+
+/* ───────────────────────── Push ───────────────────────── */
+
+/** A browser/device's Web Push subscription for a user. One user may have several devices. */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: text("user_agent"),
+    createdAt: createdAt(),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+  },
+  (t) => [index("push_subscriptions_user_idx").on(t.userId)],
 );

@@ -1,7 +1,8 @@
 "use client";
 
 import { CircleAlert, CircleCheck, Info, X } from "lucide-react";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "./ui";
 
 /*
@@ -26,20 +27,45 @@ let nextId = 1;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 const EMPTY: ToastItem[] = [];
+const timers = new Map<number, ReturnType<typeof setTimeout>>();
+let paused = false;
+
+const durationOf = (t: ToastItem) => t.duration ?? (t.action ? 8000 : 4000);
+function arm(t: ToastItem) {
+  const d = durationOf(t);
+  if (d > 0 && !paused) timers.set(t.id, setTimeout(() => dismissToast(t.id), d));
+}
 
 export function dismissToast(id: number) {
+  clearTimeout(timers.get(id));
+  timers.delete(id);
   items = items.filter((t) => t.id !== id);
   emit();
+  // Dismissing ends the interaction that paused the stack (and on phones there's no mouseleave,
+  // and the focused button may unmount without a blur) — so resume the remaining toasts.
+  if (paused) resumeToasts();
 }
 
 /** Show a toast. Returns its id (for dismissToast). */
 export function toast(message: string, opts: ToastOptions = {}) {
   const id = nextId++;
-  items = [...items.slice(-2), { id, message, ...opts }];
+  const item = { id, message, ...opts };
+  for (const old of items.slice(0, -2)) dismissToast(old.id);
+  items = [...items, item];
   emit();
-  const duration = opts.duration ?? (opts.action ? 8000 : 4000);
-  if (duration > 0) setTimeout(() => dismissToast(id), duration);
+  arm(item);
   return id;
+}
+
+/** Hover / keyboard focus holds every toast open (WCAG 2.2.1); leaving restarts their timers. */
+function pauseToasts() {
+  paused = true;
+  timers.forEach(clearTimeout);
+  timers.clear();
+}
+function resumeToasts() {
+  paused = false;
+  items.forEach(arm);
 }
 
 const subscribe = (l: () => void) => {
@@ -55,12 +81,32 @@ export function Toaster() {
     () => items,
     () => EMPTY,
   );
-  return (
+  // Re-pick the portal host when a Sheet closes (the "close" event doesn't bubble, so capture it).
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    document.addEventListener("close", rerender, true);
+    return () => document.removeEventListener("close", rerender, true);
+  }, []);
+  if (list.length === 0) return null;
+  // A modal <dialog> makes everything outside it inert and sits in the top layer, so while a Sheet
+  // is open, render toasts inside it (so Undo stays clickable and visible).
+  const dialogs = document.querySelectorAll("dialog[open]");
+  const host = dialogs.length ? dialogs[dialogs.length - 1] : document.body;
+  const inDialog = host !== document.body;
+  return createPortal(
     <div
-      aria-live="polite"
-      aria-atomic="false"
+      onMouseEnter={pauseToasts}
+      onMouseLeave={resumeToasts}
+      onFocus={pauseToasts}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) resumeToasts();
+      }}
       data-app-chrome
-      className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4 bottom-[calc(var(--bottom-chrome)+env(safe-area-inset-bottom)+12px)] md:bottom-6"
+      className={cn(
+        "pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4",
+        // Inside a sheet, sit at the top so the sheet's own footer buttons stay visible.
+        inDialog ? "top-[calc(env(safe-area-inset-top)+12px)]" : "bottom-[calc(var(--bottom-chrome)+env(safe-area-inset-bottom)+12px)] md:bottom-6",
+      )}
     >
       {list.map((t) => {
         const tone = t.tone ?? "neutral";
@@ -80,7 +126,7 @@ export function Toaster() {
                   t.action!.onClick();
                   dismissToast(t.id);
                 }}
-                className="min-h-10 rounded-full bg-bg/15 px-3.5 text-sm font-semibold hover:bg-bg/25"
+                className="min-h-11 rounded-full bg-bg/15 px-3.5 text-sm font-semibold hover:bg-bg/25"
               >
                 {t.action.label}
               </button>
@@ -89,14 +135,15 @@ export function Toaster() {
               type="button"
               aria-label="Dismiss"
               onClick={() => dismissToast(t.id)}
-              className="inline-flex size-10 shrink-0 items-center justify-center rounded-full opacity-60 hover:bg-bg/15 hover:opacity-100"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full opacity-60 hover:bg-bg/15 hover:opacity-100"
             >
               <X className="size-4" />
             </button>
           </div>
         );
       })}
-    </div>
+    </div>,
+    host,
   );
 }
 

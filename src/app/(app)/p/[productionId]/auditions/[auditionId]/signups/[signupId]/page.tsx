@@ -8,7 +8,7 @@ import { auditionSignups, roles } from "@/db/schema";
 import { requireProductionEditor } from "@/lib/access";
 import { fullName, getAuditionForProduction, getProductionAssignments, getSlotsWithCounts, isUuid } from "@/lib/auditions";
 import { fmtDateTime, fmtDay, fmtRange } from "@/lib/time";
-import { Avatar, Badge, Card, Field, Select, SectionTitle, Textarea } from "@/components/ui";
+import { Avatar, BackLink, Badge, Card, Field, Select, SectionTitle, Textarea } from "@/components/ui";
 import { moveSignup, saveReview } from "../../../actions";
 import { StateForm, SubmitButton } from "../../../_components/forms";
 import { ConflictList, RatingInput, StatusBadge, StatusButtons } from "../../../_components/signup-bits";
@@ -62,9 +62,7 @@ export default async function SignupDetail({ params }: PageProps<"/p/[production
 
   return (
     <div className="space-y-5">
-      <Link href={`${base}/signups`} className="text-sm text-muted hover:text-ink">
-        ← Signups
-      </Link>
+      <BackLink href={`${base}/signups`} label="Signups" />
       <div className="flex items-center gap-3">
         <Avatar name={fullName(s)} className="size-12 text-sm" />
         <div className="min-w-0 flex-1">

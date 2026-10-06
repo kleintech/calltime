@@ -67,7 +67,7 @@ export function AppNav({ items, user }: { items: NavItem[]; user?: { name: strin
 
   return (
     <>
-      <TopBar adminHref={adminItem?.href} />
+      <TopBar adminHref={adminItem?.href} adminActive={!!adminItem && active === adminItem.href} />
 
       {/* Phone tab bar */}
       <nav
@@ -147,7 +147,7 @@ export function AppNav({ items, user }: { items: NavItem[]; user?: { name: strin
 }
 
 /** Phone top bar: brand + status-bar scrim; turns to glass with a hairline once content scrolls under it. */
-function TopBar({ adminHref }: { adminHref?: string }) {
+function TopBar({ adminHref, adminActive }: { adminHref?: string; adminActive?: boolean }) {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 4);
@@ -172,7 +172,11 @@ function TopBar({ adminHref }: { adminHref?: string }) {
           <Link
             href={adminHref}
             aria-label="Platform admin"
-            className="inline-flex size-10 items-center justify-center rounded-full text-muted hover:bg-ink/[.06] hover:text-ink"
+            aria-current={adminActive ? "page" : undefined}
+            className={cn(
+              "inline-flex size-11 items-center justify-center rounded-full hover:bg-ink/[.06]",
+              adminActive ? "bg-accent-soft text-accent" : "text-muted hover:text-ink",
+            )}
           >
             <Shield className="size-5" />
           </Link>

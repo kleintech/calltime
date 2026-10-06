@@ -4,6 +4,7 @@ import { Check, Share2 } from "lucide-react";
 import { createContext, startTransition, useActionState, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { CopyButton } from "@/components/copy-button";
+import { toast } from "@/components/toast";
 import { Button, Notice, buttonClass, cn } from "@/components/ui";
 import type { FormState } from "@/lib/production-queries";
 
@@ -42,6 +43,10 @@ export function ActionForm({
   }, [state, resetOnSuccess, onSuccess]);
 
   const msg = state.ok ? (state.message ?? successMessage) : undefined;
+  // Success confirms with a toast (the form stays clean); invite links still render inline below.
+  useEffect(() => {
+    if (msg && !state.inviteUrl) toast(msg, { tone: "success" });
+  }, [state, msg]);
   return (
     <form
       ref={ref}
@@ -58,7 +63,6 @@ export function ActionForm({
       <PendingContext.Provider value={pending}>
         {state.error ? <Notice tone="danger">{state.error}</Notice> : null}
         {children}
-        {msg && !state.inviteUrl ? <Notice tone="success">{msg}</Notice> : null}
         {state.ok && state.inviteUrl ? <InviteLink url={state.inviteUrl} message={msg} shareText={state.shareText} /> : null}
       </PendingContext.Provider>
     </form>

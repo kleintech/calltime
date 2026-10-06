@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { events, people, volunteerSettings, volunteerShifts, volunteerSignups } from "@/db/schema";
 import { requireProductionAccess, requireProductionEditor } from "@/lib/access";
-import { fmtDay, fromLocalInput } from "@/lib/time";
+import { fromLocalInput } from "@/lib/time";
 import { ShiftFullError, signUpForShift } from "@/lib/volunteers";
 import { firstIssue, type FormState } from "@/app/(app)/org/_components/form-state";
 
@@ -153,7 +153,8 @@ export async function quickCreateShifts(_: FormState, fd: FormData): Promise<For
       .where(and(eq(events.productionId, productionId), eq(events.kind, "performance"), ne(events.status, "cancelled")))
       .orderBy(events.startsAt);
     if (shows.length === 0) return { error: "There are no performances on the schedule yet. Add them first, or pick a date." };
-    when = shows.map((e) => ({ startsAt: e.startsAt, endsAt: e.endsAt, suffix: ` — ${fmtDay(e.startsAt, org.timezone)}` }));
+    // The date shows on every card, so the title stays plain ("Concessions").
+    when = shows.map((e) => ({ startsAt: e.startsAt, endsAt: e.endsAt, suffix: "" }));
   }
 
   const rows = when.flatMap((w) =>

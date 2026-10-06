@@ -1,9 +1,10 @@
 import { asc, eq, inArray } from "drizzle-orm";
-import { ArrowDown, ArrowUp, ChevronRight, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Clapperboard, Plus } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
 import { roles, sceneRoles, scenes } from "@/db/schema";
-import { Badge, Card, EmptyState, LinkButton, SectionTitle } from "@/components/ui";
+import { Badge, Button, EmptyState, LinkButton, SectionTitle } from "@/components/ui";
+import { Sheet } from "@/components/sheet";
 import { requireProductionEditor } from "@/lib/access";
 import { daysSince, getRehearsalStats } from "@/lib/production-queries";
 import { fmtDay } from "@/lib/time";
@@ -45,18 +46,41 @@ export default async function ScenesPage({ params }: PageProps<"/p/[productionId
   const base = `/p/${productionId}`;
   const nextAct = sceneRows.at(-1)?.act ?? 1;
 
+  const addScene = (
+    <Sheet
+      trigger={
+        <Button variant={sceneRows.length ? "soft" : "primary"} size={sceneRows.length ? "sm" : "md"}>
+          <Plus /> Add scene
+        </Button>
+      }
+      title="Add a scene"
+      description="Stays open so you can add the next one."
+    >
+      <SceneForm
+        action={createScene.bind(null, productionId)}
+        scene={{ act: nextAct, number: "", name: "", description: null, songs: null, pages: null }}
+        roles={roleRows.map((r) => ({ id: r.id, name: r.name, kind: r.kind }))}
+        submitLabel="Add scene"
+        resetOnSuccess
+      />
+    </Sheet>
+  );
+
   return (
     <div>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted">
-          {sceneRows.length} scene{sceneRows.length === 1 ? "" : "s"} · tap a scene to edit its roles
-        </p>
-        {sceneRows.length ? (
-          <LinkButton href={`${base}/breakdown`} variant="secondary">
-            Breakdown
-          </LinkButton>
-        ) : null}
-      </div>
+      {sceneRows.length ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[15px] text-muted">
+            {sceneRows.length} scene{sceneRows.length === 1 ? "" : "s"} · tap one to edit its roles
+          </p>
+          <div className="flex items-center gap-1">
+            <LinkButton href={`${base}/breakdown`} variant="ghost" size="sm">
+              Breakdown
+            </LinkButton>
+            {addScene}
+          </div>
+        </div>
+      ) : null}
 
       {sceneRows.length && stats.started ? (
         <p className="mt-2 text-xs text-muted">
@@ -68,7 +92,19 @@ export default async function ScenesPage({ params }: PageProps<"/p/[productionId
 
       {sceneRows.length === 0 ? (
         <div className="mt-4">
-          <EmptyState title="No scenes yet" body="Add the scenes of the show in running order. Then mark which roles appear in each one." />
+          <EmptyState
+            icon={<Clapperboard />}
+            title="No scenes yet"
+            body="Add the scenes of the show in running order. Then mark which roles appear in each one."
+            action={
+              <>
+                {addScene}
+                <LinkButton href={`${base}/import`} variant="secondary">
+                  Import from a spreadsheet
+                </LinkButton>
+              </>
+            }
+          />
         </div>
       ) : (
         acts.map((act) => {
@@ -76,7 +112,7 @@ export default async function ScenesPage({ params }: PageProps<"/p/[productionId
           return (
             <section key={act}>
               <SectionTitle>{act === 0 ? "Prologue" : `Act ${act}`}</SectionTitle>
-              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line/80 bg-surface shadow-card">
                 {inAct.map((s, i) => {
                   const rs = (rolesByScene.get(s.id) ?? [])
                     .sort((a, b) => (roleOrder.get(a) ?? 0) - (roleOrder.get(b) ?? 0))
@@ -131,20 +167,6 @@ export default async function ScenesPage({ params }: PageProps<"/p/[productionId
         })
       )}
 
-      <SectionTitle>
-        <span className="inline-flex items-center gap-1">
-          <Plus className="size-3.5" /> Add a scene
-        </span>
-      </SectionTitle>
-      <Card>
-        <SceneForm
-          action={createScene.bind(null, productionId)}
-          scene={{ act: nextAct, number: "", name: "", description: null, songs: null, pages: null }}
-          roles={roleRows.map((r) => ({ id: r.id, name: r.name, kind: r.kind }))}
-          submitLabel="Add scene"
-          resetOnSuccess
-        />
-      </Card>
     </div>
   );
 }

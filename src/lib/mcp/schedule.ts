@@ -1,9 +1,16 @@
 import "server-only";
-import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { blockCalls, conflicts, eventBlocks, events, people, productions, roleAssignments, roles } from "@/db/schema";
 import { buildCallSheets, getCallsForPeople, getEventCallSheet, loadCastIndex } from "@/lib/calls";
+import {
+  isMaterialChange,
+  recordEventChange,
+  scheduleChangeNotification,
+  schedulePublishNotification,
+  snapshotEvent,
+} from "@/lib/changes";
 import { fmtRange } from "@/lib/time";
 import { loadGroups, loadRoles, loadScenes, requireRoles, requireScene } from "./production";
 import {
@@ -256,7 +263,10 @@ export async function createEvent(
       .returning();
     await writeBlocks(ev.id, blocks, tx);
     return ev;
-  }).then(async (ev) => (await summarizeEvents(ctx, p.id, [ev]))[0]);
+  }).then(async (ev) => {
+    if (ev.status === "published") schedulePublishNotification(ev.id); // runs after the response
+    return (await summarizeEvents(ctx, p.id, [ev]))[0];
+  });
 }
 
 export async function updateEvent(
@@ -270,31 +280,25 @@ export async function updateEvent(
     location?: string | null;
     notes?: string | null;
     blocks?: BlockInput[];
+    changeNote?: string | null;
   },
 ) {
-  const { event, production } = await getEvent(ctx, input.event);
+  const { event: initial, production } = await getEvent(ctx, input.event);
   const updated = await db.transaction(async (tx) => {
+    let change: Awaited<ReturnType<typeof recordEventChange>> = null;
+    // Lock the row so concurrent edits serialize and each gets its own revision.
+    const [event] = await tx.select().from(events).where(eq(events.id, initial.id)).for("update");
+    const before = await snapshotEvent(tx, event.id);
     const set: Partial<EventRow> = {};
-    let material = false;
     let blocks: Awaited<ReturnType<typeof resolveBlocks>> | null = null;
     if (input.blocks) {
       blocks = await resolveBlocks(ctx, production.id, input.blocks, tx);
-      // Only rewrite (and bump the revision) when the blocks actually differ.
-      if ((await blocksSignature(event.id, tx)) !== signatureOf(blocks)) {
-        await writeBlocks(event.id, blocks, tx);
-        material = true;
-      }
+      if ((await blocksSignature(event.id, tx)) !== signatureOf(blocks)) await writeBlocks(event.id, blocks, tx);
     }
     if (input.title !== undefined && input.title.trim() !== event.title) set.title = input.title.trim();
     if (input.notes !== undefined && (input.notes ?? null) !== event.notes) set.notes = input.notes ?? null;
-    if (input.kind && input.kind !== event.kind) {
-      set.kind = input.kind;
-      material = true;
-    }
-    if (input.location !== undefined && (input.location ?? null) !== event.location) {
-      set.location = input.location ?? null;
-      material = true;
-    }
+    if (input.kind && input.kind !== event.kind) set.kind = input.kind;
+    if (input.location !== undefined && (input.location ?? null) !== event.location) set.location = input.location ?? null;
     let start = input.start ? parseTime(input.start, ctx.timezone, "start") : null;
     let end = input.end ? parseTime(input.end, ctx.timezone, "end") : null;
     if (blocks?.length) {
@@ -302,23 +306,33 @@ export async function updateEvent(
       start ??= new Date(Math.min(...blocks.map((b) => b.start.getTime())));
       end ??= new Date(Math.max(...blocks.map((b) => b.end.getTime())));
     }
-    if (start && start.getTime() !== event.startsAt.getTime()) {
-      set.startsAt = start;
-      material = true;
-    }
-    if (end && end.getTime() !== event.endsAt.getTime()) {
-      set.endsAt = end;
-      material = true;
-    }
+    if (start && start.getTime() !== event.startsAt.getTime()) set.startsAt = start;
+    if (end && end.getTime() !== event.endsAt.getTime()) set.endsAt = end;
     if ((set.endsAt ?? event.endsAt) <= (set.startsAt ?? event.startsAt)) fail("end must be after start.");
-    if (material && event.status !== "draft") set.revision = event.revision + 1;
-    if (Object.keys(set).length === 0) return event;
-    const [row] = await tx.update(events).set(set).where(eq(events.id, event.id)).returning();
-    return row;
+    let [row] = Object.keys(set).length ? await tx.update(events).set(set).where(eq(events.id, event.id)).returning() : [event];
+
+    // Material = something families would notice (event diff or anyone's own call). Block notes or
+    // leader edits, title/notes tweaks: saved, but no revision bump or change entry.
+    const after = await snapshotEvent(tx, event.id);
+    if (event.status !== "draft" && before && after && isMaterialChange(before, after)) {
+      const note = input.changeNote?.trim() || null;
+      [row] = await tx
+        .update(events)
+        .set({ revision: sql`${events.revision} + 1`, changedAt: new Date() })
+        .where(eq(events.id, event.id))
+        .returning();
+      after.event = row;
+      change = await recordEventChange(tx, { before, after, changedByUserId: ctx.userId, note });
+      // Families see events.changeNote next to the "Updated" badge: the team's words, else the diff.
+      const changeNote = (note ?? change?.summary)?.slice(0, 300);
+      if (changeNote) [row] = await tx.update(events).set({ changeNote }).where(eq(events.id, event.id)).returning();
+    }
+    return { row, previousRevision: event.revision, change };
   });
+  scheduleChangeNotification(updated.change); // runs after the response
   return {
-    revisionBumped: updated.revision !== event.revision,
-    event: (await summarizeEvents(ctx, production.id, [updated]))[0],
+    revisionBumped: updated.row.revision !== updated.previousRevision,
+    event: (await summarizeEvents(ctx, production.id, [updated.row]))[0],
   };
 }
 
@@ -339,37 +353,66 @@ export async function publishEvents(
   } else fail("Pass `events` (ids) or `production` (publishes all its drafts, optionally within from/to).");
 
   const published: { id: string; title: string; start: string | null; wasCancelled?: boolean }[] = [];
+  // Push notifications must go out after the caller's transaction commits; returned for that.
+  const afterCommit: (() => void)[] = [];
   const skipped: { id: string; reason: string }[] = [];
-  for (const e of targets) {
+  for (const t of targets) {
+    // Re-read under a row lock (callers run this in a transaction) so revisions don't collide.
+    const [e] = await q.select().from(events).where(eq(events.id, t.id)).for("update");
     if (e.status === "published") {
       skipped.push({ id: e.id, reason: "already published" });
       continue;
     }
+    // Reinstating a cancellation or re-publishing something families saw before is a change.
+    const before = e.status === "cancelled" || e.publishedAt ? await snapshotEvent(q, e.id) : null;
     await q
       .update(events)
       .set({
         status: "published",
         publishedAt: new Date(),
-        // Drop the "Cancelled: <reason>" line cancel_event added.
+        // Drop a legacy "Cancelled: <reason>" line older cancel_event versions added to notes.
         notes: e.status === "cancelled" ? e.notes?.replace(CANCEL_NOTE, "") || null : e.notes,
         // Reinstating a cancelled event is a change families must see.
-        revision: e.status === "cancelled" ? e.revision + 1 : e.revision,
+        ...(e.status === "cancelled"
+          ? { revision: sql`${events.revision} + 1`, changedAt: new Date(), changeNote: "Back on — no longer cancelled" }
+          : // Re-publishing something families already saw (then unpublished) is a change too, like the web flow.
+            e.publishedAt
+            ? { revision: sql`${events.revision} + 1`, changedAt: new Date(), changeNote: "Back on the schedule" }
+            : {}),
       })
       .where(eq(events.id, e.id));
+    if (before) {
+      const change = await recordEventChange(q, { before, after: await snapshotEvent(q, e.id), changedByUserId: ctx.userId });
+      afterCommit.push(() => scheduleChangeNotification(change));
+    } else if (!e.publishedAt) afterCommit.push(() => schedulePublishNotification(e.id)); // first publish
     published.push({ id: e.id, title: e.title, start: local(e.startsAt, ctx.timezone), wasCancelled: e.status === "cancelled" || undefined });
   }
-  return { published, skipped };
+  return { published, skipped, afterCommit };
 }
 
 export async function cancelEvent(ctx: Ctx, id: string, reason?: string | null) {
   const { event } = await getEvent(ctx, id);
   if (event.status === "cancelled") return { id, status: "cancelled", note: "already cancelled" };
-  const notes = reason ? `Cancelled: ${reason}${event.notes ? `\n\n${event.notes}` : ""}` : event.notes;
-  const [row] = await db
-    .update(events)
-    .set({ status: "cancelled", notes, revision: event.status === "published" ? event.revision + 1 : event.revision })
-    .where(eq(events.id, event.id))
-    .returning();
+  let change: Awaited<ReturnType<typeof recordEventChange>> = null;
+  const row = await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(events).where(eq(events.id, event.id)).for("update");
+    if (locked.status === "cancelled") return locked;
+    const before = await snapshotEvent(tx, event.id);
+    const wasVisible = locked.status === "published";
+    const [r] = await tx
+      .update(events)
+      .set({
+        status: "cancelled",
+        // Same convention as the schedule screens: the reason lives in changeNote.
+        changeNote: reason?.trim().slice(0, 300) || null,
+        ...(wasVisible ? { revision: sql`${events.revision} + 1`, changedAt: new Date() } : {}),
+      })
+      .where(eq(events.id, event.id))
+      .returning();
+    change = await recordEventChange(tx, { before, after: await snapshotEvent(tx, event.id), changedByUserId: ctx.userId });
+    return r;
+  });
+  scheduleChangeNotification(change); // runs after the response
   return { id: row.id, title: row.title, status: row.status, revision: row.revision };
 }
 

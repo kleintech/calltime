@@ -18,11 +18,11 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "soft
 export type ButtonSize = "sm" | "md" | "lg";
 
 const buttonBase =
-  "relative inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold tracking-[-0.005em] transition-[background-color,box-shadow,transform,color,opacity] duration-150 ease-out active:scale-[.97] disabled:opacity-45 disabled:pointer-events-none aria-disabled:opacity-45 aria-disabled:pointer-events-none [&_svg]:shrink-0";
+  "relative inline-flex select-none items-center justify-center gap-2 rounded-full text-center leading-tight font-semibold tracking-[-0.005em] transition-[background-color,box-shadow,transform,color,opacity] duration-150 ease-out active:scale-[.97] disabled:opacity-45 disabled:pointer-events-none aria-disabled:opacity-45 aria-disabled:pointer-events-none [&_svg]:shrink-0";
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "min-h-9 px-3.5 text-sm [&_svg]:size-4",
-  md: "min-h-11 px-5 text-[15px] [&_svg]:size-[18px]",
-  lg: "min-h-13 px-6 text-base [&_svg]:size-5",
+  sm: "min-h-9 px-3.5 text-sm [&_svg:not([class*=size-])]:size-4",
+  md: "min-h-11 px-4 text-sm [&_svg:not([class*=size-])]:size-[18px]",
+  lg: "min-h-13 px-6 text-base [&_svg:not([class*=size-])]:size-5",
 };
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: "bg-accent text-accent-ink shadow-[var(--highlight),var(--accent-glow)] hover:bg-accent-hover",
@@ -268,7 +268,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold leading-4 whitespace-nowrap [&_svg]:size-3.5",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold leading-4 whitespace-nowrap [&_svg:not([class*=size-])]:size-3.5",
         softTones[tone],
         className,
       )}
@@ -281,7 +281,7 @@ export function Badge({
 }
 
 const chipBase =
-  "inline-flex min-h-10 shrink-0 select-none items-center gap-2 rounded-full border px-4 text-[15px] font-medium whitespace-nowrap transition-[background-color,border-color,color,transform] duration-150 active:scale-[.97]";
+  "inline-flex min-h-11 shrink-0 select-none items-center gap-2 rounded-full border px-4 text-[15px] font-medium whitespace-nowrap transition-[background-color,border-color,color,transform] duration-150 active:scale-[.97]";
 const chipIdle = "border-line-strong/70 bg-surface text-ink hover:bg-surface-2";
 const chipActive = "border-ink bg-ink text-bg";
 
@@ -370,7 +370,7 @@ export function SegmentedLinks({
   "aria-label"?: string;
 }) {
   return (
-    <nav aria-label={ariaLabel} className={cn("inline-flex rounded-full bg-surface-2 p-1 ring-1 ring-inset ring-line/60", className)}>
+    <nav aria-label={ariaLabel} className={cn("inline-flex rounded-full bg-surface-2 p-0.5 ring-1 ring-inset ring-line/60", className)}>
       {items.map((it) => (
         <Link
           key={it.href}
@@ -378,7 +378,7 @@ export function SegmentedLinks({
           aria-current={it.active ? "page" : undefined}
           scroll={false}
           className={cn(
-            "inline-flex min-h-9 flex-1 items-center justify-center rounded-full px-4 text-sm font-semibold whitespace-nowrap transition-colors",
+            "inline-flex min-h-10 flex-1 items-center justify-center rounded-full px-4 text-sm font-semibold whitespace-nowrap transition-colors",
             it.active ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
           )}
         >
@@ -508,7 +508,7 @@ export function PersonChip({
 /* ───────────────────────────── Forms ───────────────────────────── */
 
 const fieldInput =
-  "w-full rounded-xl border border-line-strong/80 bg-surface px-3.5 min-h-11 text-base text-ink shadow-[inset_0_1px_2px_rgb(var(--shadow-color)/.04)] placeholder:text-muted/80 transition-[border-color,box-shadow] duration-150 hover:border-line-strong focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:opacity-55 disabled:bg-surface-2 aria-invalid:border-danger aria-invalid:focus:ring-danger/15";
+  "w-full rounded-xl border border-control bg-surface px-3.5 min-h-11 text-base text-ink shadow-[inset_0_1px_2px_rgb(var(--shadow-color)/.04)] placeholder:text-muted/80 transition-[border-color,box-shadow] duration-150 hover:border-ink/60 focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:opacity-55 disabled:bg-surface-2 aria-invalid:border-danger aria-invalid:focus:ring-danger/15";
 
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input className={cn(fieldInput, className)} {...props} />;
@@ -578,7 +578,7 @@ export function Checkbox({
       <span className="relative inline-flex size-[22px] shrink-0">
         <input
           type="checkbox"
-          className="peer size-[22px] cursor-pointer appearance-none rounded-[7px] border-[1.5px] border-line-strong bg-surface shadow-xs transition-colors checked:border-accent checked:bg-accent disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="peer size-[22px] cursor-pointer appearance-none rounded-[7px] border-[1.5px] border-control bg-surface shadow-xs transition-colors checked:border-accent checked:bg-accent disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           {...props}
         />
         <Check
@@ -612,7 +612,7 @@ export function Switch({
         <input
           type="checkbox"
           role="switch"
-          className="peer absolute inset-0 cursor-pointer appearance-none rounded-full bg-surface-3 shadow-[inset_0_0_0_1px_var(--line-strong)] transition-colors duration-200 checked:bg-success checked:shadow-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="peer absolute inset-0 cursor-pointer appearance-none rounded-full bg-surface-3 shadow-[inset_0_0_0_1.5px_var(--control)] transition-colors duration-200 checked:bg-success checked:shadow-none disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           {...props}
         />
         <span
@@ -661,7 +661,7 @@ export function BackLink({ href, label, className }: { href: string; label: stri
     <Link
       href={href}
       className={cn(
-        "-ml-2 inline-flex min-h-9 items-center gap-0.5 rounded-full pl-1 pr-3 text-[15px] font-medium text-accent hover:bg-accent-soft",
+        "-ml-2 -my-1 inline-flex min-h-11 items-center gap-0.5 rounded-full pl-1 pr-3 text-[15px] font-medium text-accent hover:bg-accent-soft",
         className,
       )}
     >
@@ -681,7 +681,7 @@ export function SectionTitle({
   className?: string;
 }) {
   return (
-    <div className={cn("mb-2.5 mt-8 flex min-h-8 items-center justify-between gap-2 first:mt-0", className)}>
+    <div className={cn("mb-2.5 mt-8 flex min-h-8 items-center justify-between gap-2", className)}>
       <h2 className="text-[13px] font-semibold uppercase tracking-[.08em] text-muted">{children}</h2>
       {action}
     </div>
@@ -814,12 +814,12 @@ export function IconTile({
 }
 
 const avatarSizes = {
-  xs: "size-6 text-[10px]",
-  sm: "size-8 text-[11px]",
-  md: "size-9 text-xs",
-  lg: "size-12 text-base",
-  xl: "size-16 text-xl",
-};
+  xs: ["size-6", "text-[10px]"],
+  sm: ["size-8", "text-[11px]"],
+  md: ["size-9", "text-xs"],
+  lg: ["size-12", "text-base"],
+  xl: ["size-16", "text-xl"],
+} as const;
 
 export function Avatar({
   name,
@@ -838,7 +838,8 @@ export function Avatar({
     .join("");
   const h = hueOf(name);
   // A size-* in className wins over the size prop (older call sites pass className="size-12").
-  const sized = /(^|\s)size-/.test(className ?? "") ? "" : avatarSizes[size];
+  const [box, text] = avatarSizes[size];
+  const sized = cn(!/(^|\s)size-/.test(className ?? "") && box, !/(^|\s)text-/.test(className ?? "") && text);
   return (
     <span
       className={cn(
@@ -846,7 +847,7 @@ export function Avatar({
         sized,
         className,
       )}
-      style={{ background: `linear-gradient(145deg, hsl(${h} 50% 54%), hsl(${h} 45% 40%))` }}
+      style={{ background: `linear-gradient(145deg, hsl(${h} 48% 44%), hsl(${h} 50% 32%))` }}
       aria-hidden
     >
       {initials || "?"}
@@ -1020,6 +1021,8 @@ export function Menu({
   children: ReactNode;
   className?: string;
 }) {
+  // Anchor names must be valid dashed-idents.
+  const anchor = `--${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   return (
     <>
       <button
@@ -1028,7 +1031,7 @@ export function Menu({
         aria-label={trigger ? undefined : label}
         title={label}
         className={cn(trigger ? buttonClass("secondary") : cn(iconButtonBase, iconButtonSizes.md, iconButtonVariants.ghost), className)}
-        style={{ anchorName: `--${id}` } as CSSProperties}
+        style={{ anchorName: anchor } as CSSProperties}
       >
         {trigger ?? (
           <svg viewBox="0 0 24 24" className="size-5" fill="currentColor" aria-hidden>
@@ -1041,10 +1044,9 @@ export function Menu({
       <div
         id={id}
         popover="auto"
-        role="menu"
         aria-label={label}
         className="ct-menu overflow-hidden rounded-3xl border border-line/80 bg-surface p-1.5 text-ink shadow-overlay sm:rounded-2xl"
-        style={{ positionAnchor: `--${id}` } as CSSProperties}
+        style={{ positionAnchor: anchor } as CSSProperties}
       >
         <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-[.08em] text-muted sm:hidden">{label}</div>
         {children}
@@ -1067,12 +1069,12 @@ export function MenuItem({
     className,
   );
   return href ? (
-    <Link href={href} role="menuitem" className={cls}>
+    <Link href={href} className={cls}>
       {icon}
       {children}
     </Link>
   ) : (
-    <button type="button" role="menuitem" className={cls} {...props}>
+    <button type="button" className={cls} {...props}>
       {icon}
       {children}
     </button>

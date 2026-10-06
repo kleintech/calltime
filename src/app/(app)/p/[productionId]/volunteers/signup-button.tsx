@@ -1,43 +1,53 @@
 "use client";
 
-import { Check, HandHeart } from "lucide-react";
-import { useActionState, useEffect } from "react";
+import { HandHeart } from "lucide-react";
+import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/toast";
-import { cancelVolunteer, volunteer, type SignupState } from "./actions";
+import { cancelVolunteer, volunteer } from "./actions";
 
-/** One-tap "I'll help" / "Cancel" for a shift. */
+/**
+ * One-tap "I'll help" / "Cancel my spot". Calls the action directly (not useActionState) so the
+ * confirmation toast still fires after the card moves to "My volunteer shifts" and this unmounts.
+ */
 export function SignupButton({ shiftId, mode, title }: { shiftId: string; mode: "join" | "cancel"; title: string }) {
-  const [state, action, pending] = useActionState<SignupState, FormData>(mode === "join" ? volunteer : cancelVolunteer, {});
-  useEffect(() => {
-    if (state.done) toast(mode === "join" ? `You're signed up: ${title}` : `Cancelled: ${title}`, { tone: mode === "join" ? "success" : "neutral" });
-    if (state.error) toast(state.error, { tone: "danger" });
-  }, [state, mode, title]);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const run = () =>
+    start(async () => {
+      const fd = new FormData();
+      fd.set("shiftId", shiftId);
+      const res = await (mode === "join" ? volunteer({}, fd) : cancelVolunteer({}, fd));
+      if (res.error) {
+        setError(res.error);
+        toast(res.error, { tone: "danger" });
+      } else {
+        toast(mode === "join" ? `You're signed up: ${title}` : `Cancelled: ${title}`, { tone: mode === "join" ? "success" : "neutral" });
+      }
+    });
   return (
-    <form action={action}>
-      <input type="hidden" name="shiftId" value={shiftId} />
+    <div>
       {mode === "join" ? (
-        <Button type="submit" disabled={pending} className="w-full sm:w-auto">
+        <Button type="button" disabled={pending} onClick={run} className="w-full sm:w-auto">
           <HandHeart /> {pending ? "Signing up…" : "I'll help"}
         </Button>
       ) : (
         <Button
-          type="submit"
+          type="button"
           variant="secondary"
           disabled={pending}
-          onClick={(e) => {
-            if (!window.confirm(`Cancel your spot on “${title}”?`)) e.preventDefault();
+          onClick={() => {
+            if (window.confirm(`Cancel your spot on “${title}”?`)) run();
           }}
         >
           {pending ? "Cancelling…" : "Cancel my spot"}
         </Button>
       )}
-      {state.error ? <p className="mt-2 text-sm text-danger" role="alert">{state.error}</p> : null}
-      {state.done && mode === "join" ? (
-        <p className="sr-only" role="status">
-          <Check /> Signed up
+      {error ? (
+        <p className="mt-2 text-sm text-danger" role="alert">
+          {error}
         </p>
       ) : null}
-    </form>
+    </div>
   );
 }

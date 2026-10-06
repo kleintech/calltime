@@ -248,6 +248,11 @@ export function registerCalltimeTools(server: McpServer) {
       location: z.string().nullish(),
       notes: z.string().nullish(),
       blocks: z.array(blockInput).min(1).optional(),
+      changeNote: z
+        .string()
+        .max(300)
+        .optional()
+        .describe("For published events: a short note to families about the change (\"Moved to 6:30 — the hall is booked\"). Default: an automatic summary of what changed."),
     }),
     (a, c) => updateEvent(c, a),
   );
@@ -260,7 +265,11 @@ export function registerCalltimeTools(server: McpServer) {
       from: z.string().optional(),
       to: z.string().optional(),
     }),
-    (a, c) => db.transaction((tx) => publishEvents(c, a, tx)),
+    async (a, c) => {
+      const { afterCommit, ...result } = await db.transaction((tx) => publishEvents(c, a, tx));
+      for (const schedule of afterCommit) schedule(); // committed: queue the pushes
+      return result;
+    },
   );
   tool(
     "cancel_event",

@@ -1,8 +1,9 @@
 import { and, asc, eq, gt, isNotNull, isNull } from "drizzle-orm";
-import { X } from "lucide-react";
+import { UserPlus, UsersRound, X } from "lucide-react";
 import { db } from "@/db";
 import { creativeTeam, invites, users } from "@/db/schema";
-import { Avatar, Badge, Card, EmptyState, SectionTitle } from "@/components/ui";
+import { Avatar, Badge, Button, Card, EmptyState, SectionTitle } from "@/components/ui";
+import { Sheet } from "@/components/sheet";
 import { CopyButton } from "@/components/copy-button";
 import { requireProductionEditor } from "@/lib/access";
 import { inviteUrl } from "@/lib/invites";
@@ -36,9 +37,23 @@ export default async function TeamPage({ params }: PageProps<"/p/[productionId]/
   ]);
   const pendingWithUrls = await Promise.all(pending.map(async (i) => ({ ...i, url: await inviteUrl(i.token) })));
 
+  const addSomeone = (
+    <Sheet
+      trigger={
+        <Button variant={team.length ? "soft" : "primary"} size={team.length ? "sm" : "md"}>
+          <UserPlus /> Add someone
+        </Button>
+      }
+      title="Add to the creative team"
+      description="If they already use Calltime they're added right away. Otherwise you'll get an invite link to send them."
+    >
+      <AddMemberForm action={addTeamMember.bind(null, productionId)} />
+    </Sheet>
+  );
+
   return (
     <div>
-      <SectionTitle>Creative team · {team.length}</SectionTitle>
+      <SectionTitle action={team.length ? addSomeone : null}>Creative team · {team.length}</SectionTitle>
       {team.length ? (
         <div className="space-y-2">
           {team.map(({ member, user: u }) => (
@@ -80,7 +95,12 @@ export default async function TeamPage({ params }: PageProps<"/p/[productionId]/
           ))}
         </div>
       ) : (
-        <EmptyState title="No creative team yet" body="Add the director, music director, choreographer and stage manager." />
+        <EmptyState
+          icon={<UsersRound />}
+          title="No creative team yet"
+          body="Add the director, music director, choreographer and stage manager."
+          action={addSomeone}
+        />
       )}
 
       {pendingWithUrls.length ? (
@@ -110,13 +130,6 @@ export default async function TeamPage({ params }: PageProps<"/p/[productionId]/
         </>
       ) : null}
 
-      <SectionTitle>Add someone</SectionTitle>
-      <Card>
-        <p className="mb-4 text-sm text-muted">
-          If they already use Calltime they&apos;re added right away. Otherwise you&apos;ll get an invite link to send them.
-        </p>
-        <AddMemberForm action={addTeamMember.bind(null, productionId)} />
-      </Card>
     </div>
   );
 }

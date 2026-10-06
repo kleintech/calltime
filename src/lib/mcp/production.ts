@@ -17,6 +17,7 @@ import {
   users,
 } from "@/db/schema";
 import { sceneLabel } from "@/lib/calls";
+import { deleteCallsTargeting } from "@/lib/production-queries";
 import { type Ctx, type Q, fail, isUuid, listForError, norm, personName, getProduction } from "./util";
 
 /* ───────────────────────── Schemas ───────────────────────── */
@@ -288,7 +289,12 @@ export async function deleteRole(ctx: Ctx, productionRef: string, roleRef: strin
   const p = await getProduction(ctx, productionRef);
   const [role] = requireRoles(await loadRoles(p.id), [roleRef], "delete_role");
   const assigned = await db.select({ n: count() }).from(roleAssignments).where(eq(roleAssignments.roleId, role.id));
-  await db.delete(roles).where(eq(roles.id, role.id));
+  // Same as the web delete: drop block calls that targeted this role (no FK cascade from a
+  // polymorphic targetId), then the role — atomically.
+  await db.transaction(async (tx) => {
+    await deleteCallsTargeting("role", role.id, tx);
+    await tx.delete(roles).where(eq(roles.id, role.id));
+  });
   return { deleted: role.name, unassignedPeople: assigned[0]?.n ?? 0 };
 }
 

@@ -1,15 +1,18 @@
 import { and, asc, count, desc, eq, gte, inArray, min, or } from "drizzle-orm";
-import { Ban, CalendarClock, Megaphone, CalendarPlus, ChevronRight, ExternalLink, MapPin, RefreshCw, StickyNote, TriangleAlert } from "lucide-react";
+import { Ban, CalendarClock, FolderOpen, HandHeart, Megaphone, NotebookPen, CalendarPlus, ChevronRight, ExternalLink, MapPin, RefreshCw, StickyNote, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
-import { announcements, eventBlocks, events, organizations } from "@/db/schema";
-import { Badge, Card, EmptyState, LinkButton, cn } from "@/components/ui";
+import { announcements, changeAcks, eventBlocks, eventChanges, events, organizations } from "@/db/schema";
+import { Badge, Card, Chip, cn, EmptyState, LinkButton } from "@/components/ui";
 import { getCoveredPersonIds, getUserProductions } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { getCallsForPeople, type PersonCall } from "@/lib/calls";
-import { mapsUrl, personColor, recentChange } from "@/lib/schedule-shared";
+import { getUnacknowledgedChanges } from "@/lib/changes";
+import { getUnreadNoteCount } from "@/lib/notes";
+import { mapsUrl, personColor } from "@/lib/schedule-shared";
 import { dayKey, fmtDay, fmtDayLong, fmtRange, fmtTime, toDateInput, toTimeInput } from "@/lib/time";
 import { weekKey } from "@/lib/schedule-shared";
+import { GotItButton } from "./_components/got-it";
 import { KindIcon, PersonChip, StatusBadges } from "../p/[productionId]/schedule/_components/bits";
 
 type EventGroup = { key: string; tz: string; calls: PersonCall[] };
@@ -55,13 +58,62 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
   const next = groups.find((g) => g.calls[0].event.status !== "cancelled" && g.calls.some((c) => c.releaseAt > now));
   const rest = groups.filter((g) => g !== next);
 
-  // Changes & cancellations in the next 2 weeks: shown above the hero so nobody misses them
+  // Changes & cancellations this account hasn't acknowledged ("Got it"), shown above the hero.
+  const unackedList = covered.length ? await getUnacknowledgedChanges(user.id) : [];
+  const unacked = new Map(unackedList.map((u) => [u.event.id, u]));
+  // Cancellations that predate change tracking (no change rows) still need surfacing once.
   const soon = now.getTime() + 14 * 86400_000;
-  const alerts = groups.filter((g) => {
-    const ev = g.calls[0].event;
-    if (startOf(g) > soon) return false;
-    return ev.status === "cancelled" || !!recentChange(ev, now);
-  });
+  const legacyIds = groups
+    .filter((g) => g.calls[0].event.status === "cancelled" && !unacked.has(g.key) && startOf(g) <= soon)
+    .map((g) => g.key);
+  const [legacyChanges, legacyAcks] = legacyIds.length
+    ? await Promise.all([
+        db.select({ eventId: eventChanges.eventId }).from(eventChanges).where(inArray(eventChanges.eventId, legacyIds)),
+        db
+          .select({ eventId: changeAcks.eventId })
+          .from(changeAcks)
+          .where(and(eq(changeAcks.userId, user.id), inArray(changeAcks.eventId, legacyIds))),
+      ])
+    : [[], []];
+  const legacyCancelled = new Set(
+    legacyIds.filter((id) => !legacyChanges.some((c) => c.eventId === id) && !legacyAcks.some((a) => a.eventId === id)),
+  );
+  const changedAt = (eventId: string) => {
+    const u = unacked.get(eventId);
+    return u ? u.changes.at(-1)!.createdAt : null;
+  };
+  // Built from the change list (not current calls) so someone dropped from an event still hears about it.
+  type Alert = { eventId: string; productionId: string; title: string; at: Date; tz: string; cancelled: boolean; removed: boolean; who: string[]; lines: string[]; revision: number };
+  const alerts: Alert[] = [
+    ...unackedList
+      .filter((u) => !filter || u.people.includes(peopleById.get(filter)?.firstName ?? ""))
+      .map((u) => ({
+        eventId: u.event.id,
+        productionId: u.production.id,
+        title: u.event.title,
+        at: byEvent.get(u.event.id)?.calls[0].callAt ?? u.event.startsAt,
+        tz: tzOf(u.production.orgId),
+        cancelled: u.event.status === "cancelled",
+        removed: u.event.status === "draft", // unpublished: families can't open it, so no link
+        who: u.people,
+        lines: u.changes.flatMap((c) => c.lines).slice(-4),
+        revision: u.latestRevision,
+      })),
+    ...groups
+      .filter((g) => legacyCancelled.has(g.key))
+      .map((g) => ({
+        eventId: g.key,
+        productionId: g.calls[0].production.id,
+        title: g.calls[0].event.title,
+        at: g.calls[0].callAt,
+        tz: g.tz,
+        cancelled: true,
+        removed: false,
+        who: g.calls.map((c) => c.person.firstName),
+        lines: [g.calls[0].event.changeNote ? `Cancelled — ${g.calls[0].event.changeNote}` : "Cancelled"],
+        revision: g.calls[0].event.revision,
+      })),
+  ].sort((a, b) => a.at.getTime() - b.at.getTime());
 
   const relDay = (d: Date, tz: string) => {
     const k = dayKey(d, tz);
@@ -91,6 +143,9 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
         .limit(3)
     : [];
   const prodById = new Map(productions.map((p) => [p.production.id, p.production]));
+  const unreadNotes = new Map(
+    await Promise.all(castProdIds.map(async (id) => [id, await getUnreadNoteCount(user.id, id)] as const)),
+  );
 
   const running = productions.filter((p) => (p.relation === "admin" || p.relation === "creative") && p.production.status !== "closed");
   const runningInfo = running.length ? await getRunningInfo(running, now) : { events: [], drafts: new Map<string, number>(), firstDraft: new Map<string, Date | null>() };
@@ -124,36 +179,47 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
       ) : null}
 
       {alerts.length > 0 ? (
-        <div className="mb-4 overflow-hidden rounded-2xl border border-warn/40 bg-warn-soft" role="status">
+        <section className="mb-4 overflow-hidden rounded-2xl border border-warn/40 bg-warn-soft" aria-label="Changes">
           <p className="flex items-center gap-2 px-4 pt-3 text-sm font-semibold text-warn">
-            <TriangleAlert className="size-4" /> {alerts.length} {alerts.length === 1 ? "change" : "changes"} coming up
+            <TriangleAlert className="size-4" /> {alerts.length} {alerts.length === 1 ? "change" : "changes"} to check
           </p>
-          <ul className="px-1 pb-1.5">
-            {alerts.map((g) => {
-              const ev = g.calls[0].event;
-              const cancelled = ev.status === "cancelled";
-              return (
-                <li key={g.key}>
-                  <Link
-                    href={`/p/${g.calls[0].production.id}/schedule/${ev.id}`}
-                    className="flex min-h-11 items-start gap-2 rounded-xl px-3 py-2 text-sm hover:bg-black/5"
-                  >
-                    {cancelled ? <Ban className="mt-0.5 size-4 shrink-0 text-danger" /> : <RefreshCw className="mt-0.5 size-4 shrink-0 text-warn" />}
-                    <span className="min-w-0 flex-1">
-                      <span className="font-medium">
-                        {fmtDay(g.calls[0].callAt, g.tz)} {fmtTime(g.calls[0].callAt, g.tz)} · {ev.title}
-                      </span>{" "}
-                      {cancelled ? <strong className="text-danger">CANCELLED</strong> : <strong>changed</strong>}
-                      {multi || g.calls.length > 1 ? <span className="text-muted"> ({g.calls.map((c) => c.person.firstName).join(", ")})</span> : null}
-                      {ev.changeNote ? <span className="block text-muted">{ev.changeNote}</span> : null}
-                    </span>
-                    <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted" />
-                  </Link>
-                </li>
-              );
-            })}
+          <ul className="space-y-1 p-1.5">
+            {alerts.map((a) => (
+              <li key={a.eventId} className="rounded-xl bg-surface/70 p-3">
+                {(() => {
+                  const content = (
+                    <>
+                      {a.cancelled || a.removed ? <Ban className="mt-0.5 size-4 shrink-0 text-danger" /> : <RefreshCw className="mt-0.5 size-4 shrink-0 text-warn" />}
+                      <span className="min-w-0 flex-1">
+                        <span className="font-semibold">
+                          {fmtDay(a.at, a.tz)} · {a.title}
+                        </span>
+                        {multi ? <span className="text-muted"> · {a.who.join(" & ")}</span> : null}
+                        {a.cancelled ? <strong className="ml-1 text-danger">CANCELLED</strong> : a.removed ? <strong className="ml-1 text-danger">REMOVED</strong> : null}
+                        {a.lines.map((t, i) => (
+                          <span key={i} className="mt-0.5 block">
+                            {t}
+                          </span>
+                        ))}
+                      </span>
+                    </>
+                  );
+                  return a.removed ? (
+                    <div className="flex items-start gap-2 text-sm">{content}</div>
+                  ) : (
+                    <Link href={`/p/${a.productionId}/schedule/${a.eventId}`} className="flex items-start gap-2 text-sm">
+                      {content}
+                      <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted" />
+                    </Link>
+                  );
+                })()}
+                <div className="mt-2 flex justify-end">
+                  <GotItButton eventId={a.eventId} revision={a.revision} />
+                </div>
+              </li>
+            ))}
           </ul>
-        </div>
+        </section>
       ) : null}
 
       {next ? (
@@ -162,6 +228,8 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
           label={relDay(next.calls[0].callAt, next.tz)}
           multi={multi}
           now={now}
+          changed={changedAt(next.key)}
+          changes={unacked.get(next.key)?.changes.flatMap((c) => c.lines) ?? []}
           cancelledSameDay={groups.filter(
             (g) => g.calls[0].event.status === "cancelled" && dayKey(g.calls[0].callAt, g.tz) === dayKey(next.calls[0].callAt, next.tz),
           )}
@@ -192,6 +260,34 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
           </span>
           <ChevronRight className="size-4 text-muted" />
         </Link>
+      ) : null}
+
+      {castProdIds.length > 0 ? (
+        <nav className="mt-3 space-y-2" aria-label="Show resources">
+          {castProdIds.map((id) => {
+            const n = unreadNotes.get(id) ?? 0;
+            const pill =
+              "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 text-sm text-ink hover:bg-surface-2 [&_svg]:size-4 [&_svg]:text-muted";
+            return (
+              <div key={id} className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
+                {castProdIds.length > 1 ? (
+                  <span className="shrink-0 text-xs font-medium text-muted">{prodById.get(id)?.title}</span>
+                ) : null}
+                {n > 0 ? (
+                  <Link href={`/p/${id}/notes`} className={cn(pill, "border-accent/40 bg-accent-soft font-medium text-accent [&_svg]:text-accent")}>
+                    <NotebookPen /> {n} new {n === 1 ? "note" : "notes"}
+                  </Link>
+                ) : null}
+                <Link href={`/p/${id}/resources`} className={pill}>
+                  <FolderOpen /> Materials
+                </Link>
+                <Link href={`/p/${id}/volunteers`} className={pill}>
+                  <HandHeart /> Volunteer
+                </Link>
+              </div>
+            );
+          })}
+        </nav>
       ) : null}
 
       {annRows.length > 0 ? (
@@ -225,7 +321,7 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
               <h3 className="mb-2 text-sm font-semibold text-muted">{d.label}</h3>
               <div className="space-y-2">
                 {d.groups.map((g) => (
-                  <CallCard key={g.key} group={g} multi={multi} showProduction={multiProduction} now={now} />
+                  <CallCard key={g.key} group={g} multi={multi} showProduction={multiProduction} now={now} changed={changedAt(g.key)} changes={unacked.get(g.key)?.changes.flatMap((c) => c.lines) ?? []} />
                 ))}
               </div>
             </section>
@@ -270,28 +366,45 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
               const firstDraft = runningInfo.firstDraft.get(p.id);
               const draftHref = `/p/${p.id}/schedule${firstDraft ? `#week-${weekKey(firstDraft, tz)}` : ""}`;
               return (
-                <Card key={p.id} className="overflow-hidden p-0">
-                  <Link href={`/p/${p.id}/schedule`} className="flex items-center gap-3 border-b border-line px-4 py-3 hover:bg-surface-2">
-                    <span className="size-3 shrink-0 rounded-full" style={{ background: p.accentColor }} />
+                <Card key={p.id} className="isolate overflow-hidden p-0">
+                  <Link
+                    href={`/p/${p.id}/schedule`}
+                    aria-label={`${p.title} schedule`}
+                    className="relative flex items-center gap-3 border-b border-line px-4 py-3.5 transition-colors hover:bg-surface-2/60"
+                  >
+                    <span
+                      aria-hidden
+                      className="absolute inset-0 -z-10"
+                      style={{ background: `linear-gradient(100deg, color-mix(in oklab, ${p.accentColor} 14%, transparent), transparent 70%)` }}
+                    />
+                    <span
+                      aria-hidden
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ background: p.accentColor, boxShadow: `0 0 0 4px color-mix(in oklab, ${p.accentColor} 20%, transparent)` }}
+                    />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">{p.title}</span>
-                      <span className="block text-xs text-muted">{ctTitle ?? (relation === "admin" ? "Company admin" : "")}</span>
+                      <span className="block font-display text-lg font-semibold leading-snug tracking-tight">{p.title}</span>
+                      <span className="block text-sm text-muted">{ctTitle ?? (relation === "admin" ? "Company admin" : "")}</span>
                     </span>
-                    <span className="text-sm font-medium text-accent">Schedule</span>
-                    <ChevronRight className="size-4 text-accent" />
+                    <span className="inline-flex shrink-0 items-center gap-0.5 text-sm font-semibold text-accent">
+                      Schedule
+                      <ChevronRight aria-hidden className="size-4" />
+                    </span>
                   </Link>
                   {drafts > 0 ? (
                     <Link
                       href={draftHref}
-                      className="flex min-h-11 items-center gap-2 border-b border-line bg-warn-soft/50 px-4 text-sm hover:bg-warn-soft"
+                      className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-warn-soft/60 px-4 py-2.5 text-sm transition-colors hover:bg-warn-soft"
                     >
                       <Badge tone="warn">
                         {drafts} draft{drafts === 1 ? "" : "s"}
                       </Badge>
-                      <span className="flex-1">
+                      <span className="min-w-0 flex-1 text-ink/80">
                         {firstDraft ? `From ${fmtDay(firstDraft, tz)} · ` : ""}families can&apos;t see these yet
                       </span>
-                      <span className="font-medium text-accent">Review &amp; publish</span>
+                      <span className="inline-flex items-center gap-0.5 font-semibold text-accent">
+                        Review &amp; publish <ChevronRight aria-hidden className="size-4" />
+                      </span>
                     </Link>
                   ) : null}
                   {evs.length === 0 ? (
@@ -300,13 +413,14 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
                     <ul className="divide-y divide-line">
                       {evs.map((e) => (
                         <li key={e.id}>
-                          <Link href={`/p/${p.id}/schedule/${e.id}`} className="flex min-h-12 items-center gap-3 px-4 py-2.5 hover:bg-surface-2">
-                            <span className="w-24 shrink-0 text-xs text-muted">{relDay(e.startsAt, tz)}</span>
+                          <Link href={`/p/${p.id}/schedule/${e.id}`} className="flex min-h-14 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2/60">
                             <span className="min-w-0 flex-1">
-                              <span className={cn("block truncate text-sm font-medium", e.status === "cancelled" && "text-muted line-through")}>
+                              <span className={cn("block truncate font-medium", e.status === "cancelled" && "text-muted line-through")}>
                                 {e.title}
                               </span>
-                              <span className="block text-xs text-muted">{fmtRange(e.startsAt, e.endsAt, tz)}</span>
+                              <span className="tabular block text-sm text-muted">
+                                <span className="font-medium text-ink/80">{relDay(e.startsAt, tz)}</span> · {fmtRange(e.startsAt, e.endsAt, tz)}
+                              </span>
                             </span>
                             <span className="flex shrink-0 flex-wrap justify-end gap-1">
                               {e.youLead ? <Badge tone="accent">You lead</Badge> : null}
@@ -371,17 +485,9 @@ async function getRunningInfo(running: Awaited<ReturnType<typeof getUserProducti
 
 function FilterChip({ href, active, label, color }: { href: string; active: boolean; label: string; color?: string }) {
   return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium",
-        active ? "border-ink bg-ink text-bg" : "border-line bg-surface text-ink hover:bg-surface-2",
-      )}
-    >
-      {color ? <span className="size-2.5 rounded-full" style={{ background: color }} /> : null}
+    <Chip href={href} active={active} color={color}>
       {label}
-    </Link>
+    </Chip>
   );
 }
 
@@ -417,12 +523,16 @@ function HeroCard({
   multi,
   now,
   cancelledSameDay,
+  changed,
+  changes,
 }: {
   group: EventGroup;
   label: string;
   multi: boolean;
   now: Date;
   cancelledSameDay: EventGroup[];
+  changed: Date | null;
+  changes: string[];
 }) {
   const { tz } = group;
   const first = group.calls[0];
@@ -430,7 +540,6 @@ function HeroCard({
   const accent = first.production.accentColor;
   const loc = whereLabel(group);
   const href = `/p/${first.production.id}/schedule/${ev.id}`;
-  const changed = recentChange(ev, now);
   const soon = startsIn(first.callAt, now);
   const pickups = group.calls.length > 1 ? group.calls.map((c) => `${c.person.firstName} ${fmtTime(c.releaseAt, tz)}`).join(" · ") : null;
   return (
@@ -442,7 +551,7 @@ function HeroCard({
             <CalendarClock className="size-4" /> Next call · {label}
           </span>
           <span className="flex flex-wrap justify-end gap-1">
-            <StatusBadges event={ev} tz={tz} now={now} />
+            <StatusBadges event={ev} tz={tz} now={now} changed={changed} />
           </span>
         </div>
         {soon ? <p className="mt-1 text-sm font-semibold text-accent">{soon}</p> : null}
@@ -473,7 +582,7 @@ function HeroCard({
           <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-gold-soft px-2.5 py-1.5 text-sm">
             <RefreshCw className="mt-0.5 size-4 shrink-0 text-gold" />
             <span>
-              <strong>Changed {fmtDay(changed, tz)}.</strong> {ev.changeNote ?? "Check the times above."}
+              <strong>Changed {fmtDay(changed, tz)}:</strong> {changes.join("; ")}
             </span>
           </p>
         ) : null}
@@ -511,12 +620,25 @@ function HeroCard({
   );
 }
 
-function CallCard({ group, multi, showProduction, now }: { group: EventGroup; multi: boolean; showProduction: boolean; now: Date }) {
+function CallCard({
+  group,
+  multi,
+  showProduction,
+  now,
+  changed,
+  changes,
+}: {
+  group: EventGroup;
+  multi: boolean;
+  showProduction: boolean;
+  now: Date;
+  changed: Date | null;
+  changes: string[];
+}) {
   const { tz } = group;
   const first = group.calls[0];
   const ev = first.event;
   const cancelled = ev.status === "cancelled";
-  const changed = recentChange(ev, now);
   const where = whereLabel(group);
   return (
     <Link
@@ -539,7 +661,7 @@ function CallCard({ group, multi, showProduction, now }: { group: EventGroup; mu
             ) : null}
           </p>
           <span className="flex shrink-0 flex-wrap justify-end gap-1">
-            <StatusBadges event={ev} tz={tz} now={now} />
+            <StatusBadges event={ev} tz={tz} now={now} changed={changed} />
           </span>
         </div>
         <div className="mt-1 space-y-1.5">
@@ -555,7 +677,7 @@ function CallCard({ group, multi, showProduction, now }: { group: EventGroup; mu
             </div>
           ))}
         </div>
-        {(cancelled || changed) && ev.changeNote ? <p className="mt-1 text-sm text-muted">{ev.changeNote}</p> : null}
+        {changes.length ? <p className="mt-1 text-sm text-muted">{changes.at(-1)}</p> : cancelled && ev.changeNote ? <p className="mt-1 text-sm text-muted">{ev.changeNote}</p> : null}
         {where ? (
           <p className="mt-1 flex items-center gap-1 text-sm text-muted">
             <MapPin className="size-3.5 shrink-0" /> <span className="truncate">{where}</span>

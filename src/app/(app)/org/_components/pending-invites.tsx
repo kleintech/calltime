@@ -34,12 +34,12 @@ export function PendingInvites({
               </Badge>
             ))}
           </div>
-          <div className="flex flex-wrap items-start gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ShareInvite url={url} message={message} compact />
             <form action={revokeInvite}>
               <input type="hidden" name="orgId" value={orgId} />
               <input type="hidden" name="inviteId" value={invite.id} />
-              <SubmitButton variant="danger" confirm={`Revoke the invite for ${invite.name || invite.email}? The link will stop working.`}>
+              <SubmitButton variant="danger" size="sm" confirm={`Revoke the invite for ${invite.name || invite.email}? The link will stop working.`}>
                 Revoke invite
               </SubmitButton>
             </form>

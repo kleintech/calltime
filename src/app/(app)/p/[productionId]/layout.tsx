@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { ProductionHeader, ProductionTabs, type ProductionTab } from "@/components/production-tabs";
 import { Badge } from "@/components/ui";
-import { requireProductionAccess } from "@/lib/access";
+import { getUserProductions, requireProductionAccess } from "@/lib/access";
 import { dayKey } from "@/lib/time";
 
 const STATUS: Record<string, { label: string; tone: "neutral" | "accent" | "gold" | "success" }> = {
@@ -30,7 +30,7 @@ function openingCountdown(openingDate: string | null, tz: string) {
  */
 export default async function ProductionLayout({ children, params }: LayoutProps<"/p/[productionId]">) {
   const { productionId } = await params;
-  const { production, canEdit, org } = await requireProductionAccess(productionId);
+  const { production, canEdit, org, user } = await requireProductionAccess(productionId);
   const base = `/p/${productionId}`;
 
   let tabs: ProductionTab[];
@@ -46,13 +46,18 @@ export default async function ProductionLayout({ children, params }: LayoutProps
       auditions: { href: `${base}/auditions`, label: "Auditions" },
       team: { href: `${base}/team`, label: "Team" },
       settings: { href: `${base}/settings`, label: "Settings" },
+      resources: { href: `${base}/resources`, label: "Resources" },
+      notes: { href: `${base}/notes`, label: "Notes" },
+      reports: { href: `${base}/reports`, label: "Reports" },
+      volunteers: { href: `${base}/volunteers`, label: "Volunteers" },
     };
-    if (production.status === "auditions" || production.status === "planning") {
-      tabs = [t.overview, t.auditions, t.schedule, t.cast];
-      more = [t.scenes, t.roles, t.breakdown, t.team, t.settings];
+    // Four primary tabs + More (GUIDELINES §1). Overview lives in More so /p/<id> still has a home.
+    if (production.status === "auditions") {
+      tabs = [t.auditions, t.schedule, t.cast];
+      more = [t.overview, t.scenes, t.roles, t.breakdown, t.resources, t.notes, t.reports, t.volunteers, t.team, t.settings];
     } else {
-      tabs = [t.overview, t.schedule, t.cast, t.scenes];
-      more = [t.roles, t.breakdown, t.auditions, t.team, t.settings];
+      tabs = [t.schedule, t.cast, t.scenes];
+      more = [t.overview, t.roles, t.breakdown, t.resources, t.notes, t.reports, t.volunteers, t.auditions, t.team, t.settings];
     }
   } else {
     tabs = [
@@ -60,7 +65,17 @@ export default async function ProductionLayout({ children, params }: LayoutProps
       { href: `${base}/schedule`, label: "Schedule" },
       { href: `${base}/cast`, label: "Cast & Team" },
     ];
+    more = [
+      { href: `${base}/resources`, label: "Materials" },
+      { href: `${base}/notes`, label: "Notes" },
+      { href: `${base}/volunteers`, label: "Volunteer" },
+    ];
   }
+
+  // Back goes to the shows list only when there is a list to go back to (it redirects single-show
+  // families straight back here); otherwise to Calls.
+  const showCount = canEdit ? Infinity : (await getUserProductions(user)).length;
+  const back = showCount > 1 ? { href: "/productions", label: org.name } : { href: "/home", label: "Calls" };
 
   const status = STATUS[production.status] ?? STATUS.planning;
   const countdown = openingCountdown(production.openingDate, org.timezone);
@@ -72,8 +87,8 @@ export default async function ProductionLayout({ children, params }: LayoutProps
         title={production.title}
         subtitle={production.subtitle}
         accentColor={production.accentColor}
-        backHref="/productions"
-        backLabel={org.name}
+        backHref={back.href}
+        backLabel={back.label}
         meta={
           <>
             <Badge tone={status.tone} dot>

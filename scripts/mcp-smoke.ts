@@ -11,12 +11,13 @@
  * understudies wrongly called for scene calls, local times interpreted in the server's timezone.
  */
 import assert from "node:assert/strict";
-import { createHash, randomBytes } from "node:crypto";
+import { createECDH, createHash, randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { and, eq, like, or } from "drizzle-orm";
 import { db } from "../src/db";
-import { apiKeys, orgMembers, people, productions } from "../src/db/schema";
+import { apiKeys, eventChanges, events, orgMembers, people, productions, pushSubscriptions, sessions, users } from "../src/db/schema";
 
 const BASE = process.argv[2] ?? "http://localhost:3100";
 // Per-run tag so concurrent runs never see (or clean up) each other's data.
@@ -46,6 +47,8 @@ async function main() {
     })
     .returning();
 
+  let tempUserId: string | null = null;
+  const tempUserIds: string[] = [];
   const connect = async (token: string) => {
     const client = new Client({ name: "calltime-smoke", version: "1.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL("/api/mcp", BASE), {
@@ -105,7 +108,8 @@ async function main() {
     console.log("ok - import_production created", JSON.stringify(first));
 
     /* Schedule: 18:00–19:00 local calls scene 1 (Keeper + Ghost), 19:00–20:00 calls scene 2. */
-    const day = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10);
+    // 3 days out: inside the digest's 7-day window whatever the UTC/local date skew.
+    const day = new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10);
     const ev = await call("create_event", {
       production: TITLE,
       title: "Smoke rehearsal",
@@ -157,6 +161,145 @@ async function main() {
     // A role call includes understudies: Ollie (Keeper understudy + Gull) is now called 18:30.
     assert.equal((sheet2.people as Json[]).find((p) => p.name === OLLIE)?.call, `${day}T18:30`);
     console.log("ok - update_event bumps revision; role call includes understudy");
+
+    /* Change log: the published edit is recorded with a readable summary… */
+    const changeRows = await db.select().from(eventChanges).where(eq(eventChanges.eventId, ev.id as string));
+    assert.equal(changeRows.length, 1, "expected one change row for the published edit");
+    assert.match(changeRows[0].summary, /Start moved 6:00 PM → 6:30 PM/);
+    assert.match(changeRows[0].summary, /Birds, Keeper added/);
+    // Per-person impact: Wren's call moved, Juno (Ghost, scene 1 only) is no longer called.
+    const pid = async (email: string) => (await db.query.people.findFirst({ where: eq(people.email, email) }))!.id;
+    const wrenId = await pid(`wren@${EMAIL_DOMAIN}`);
+    const junoId = await pid(`juno@${EMAIL_DOMAIN}`);
+    assert.match(changeRows[0].personSummaries[wrenId], /^Now called 6:30–8:00 PM \(was 6:00–8:00 PM\)/);
+    assert.match(changeRows[0].personSummaries[junoId], /^No longer called \(was 6:00–7:00 PM\)/);
+    // …and shows up in the weekly digest of an account covering a called person.
+    const [tmpUser] = await db
+      .insert(users)
+      .values({ email: `digest@${EMAIL_DOMAIN}`, name: `Digest Tester${TAG}`, calendarToken: `tmp-${TAG}` })
+      .returning();
+    tempUserId = tmpUser.id;
+    await db.update(people).set({ userId: tmpUser.id }).where(eq(people.email, `wren@${EMAIL_DOMAIN}`));
+    const sessionToken = randomBytes(32).toString("base64url");
+    await db.insert(sessions).values({
+      id: createHash("sha256").update(sessionToken).digest("hex"),
+      userId: tmpUser.id,
+      expiresAt: new Date(Date.now() + 3600_000),
+    });
+    const digestRes = await fetch(new URL("/api/digest/preview?format=text", BASE), { headers: { Cookie: `ct_session=${sessionToken}` } });
+    const digestText = await digestRes.text();
+    assert.equal(digestRes.status, 200, digestText);
+    // Families get their own person's summary, not the event-level one.
+    assert.match(digestText, /Called 6:30–8:00 PM/, digestText);
+    assert.match(digestText, /Now called 6:30–8:00 PM \(was 6:00–8:00 PM\)/, digestText);
+    // A change that only touches Juno must not reach Wren's family.
+    await call("update_event", {
+      event: ev.id,
+      blocks: [
+        { start: `${day}T18:30`, end: `${day}T20:00`, calls: [{ type: "group", ref: "Birds" }, { type: "role", ref: "Keeper" }] },
+        { start: `${day}T20:00`, end: `${day}T20:30`, title: "Ghost fitting", calls: [{ type: "person", ref: JUNO }] },
+      ],
+    });
+    const rows2 = await db.select().from(eventChanges).where(eq(eventChanges.eventId, ev.id as string));
+    const lastChange = rows2.find((r) => r.revision === Math.max(...rows2.map((x) => x.revision)))!;
+    assert.deepEqual(lastChange.affectedPersonIds, [junoId], JSON.stringify(lastChange));
+    const digest2 = await (await fetch(new URL("/api/digest/preview?format=text", BASE), { headers: { Cookie: `ct_session=${sessionToken}` } })).text();
+    assert.ok(!/Ghost fitting|Juno/.test(digest2), digest2);
+    // Someone dropped from the event is told (they're no longer in the call list, but they're affected).
+    const [junoUser] = await db
+      .insert(users)
+      .values({ email: `junodigest@${EMAIL_DOMAIN}`, name: `Juno Parent${TAG}`, calendarToken: `tmp2-${TAG}` })
+      .returning();
+    tempUserIds.push(junoUser.id);
+    await db.update(people).set({ userId: junoUser.id }).where(eq(people.id, junoId));
+    const junoToken = randomBytes(32).toString("base64url");
+    await db.insert(sessions).values({ id: createHash("sha256").update(junoToken).digest("hex"), userId: junoUser.id, expiresAt: new Date(Date.now() + 3600_000) });
+    const junoDigest = await (await fetch(new URL("/api/digest/preview?format=text", BASE), { headers: { Cookie: `ct_session=${junoToken}` } })).text();
+    assert.match(junoDigest, /No longer called \(was 6:00–7:00 PM\)/, junoDigest);
+    console.log("ok - change recorded per person; unaffected families aren't told; dropped people are");
+
+    // Block room change is material and logged; block notes/leader alone are not.
+    const blocksNow = [
+      { start: `${day}T18:30`, end: `${day}T20:00`, calls: [{ type: "group", ref: "Birds" }, { type: "role", ref: "Keeper" }] },
+      { start: `${day}T20:00`, end: `${day}T20:30`, title: "Ghost fitting", calls: [{ type: "person", ref: JUNO }] },
+    ];
+    const notesOnly = await call("update_event", { event: ev.id, blocks: blocksNow.map((b, i) => (i === 0 ? { ...b, notes: "bring water", leader: "SM" } : b)) });
+    assert.equal(notesOnly.revisionBumped, false, "block notes/leader alone bumped the revision");
+    const roomMove = await call("update_event", { event: ev.id, blocks: blocksNow.map((b, i) => (i === 0 ? { ...b, location: "Room 2" } : b)) });
+    assert.equal(roomMove.revisionBumped, true, "block room change didn't bump the revision");
+    const roomRows = await db.select().from(eventChanges).where(eq(eventChanges.eventId, ev.id as string));
+    assert.ok(roomRows.some((r) => /Rooms changed/.test(r.summary) && /room now Room 2/i.test(r.personSummaries[wrenId] ?? "")), JSON.stringify(roomRows));
+    // Concurrent edits get distinct revisions.
+    await Promise.all([
+      call("update_event", { event: ev.id, location: "Hall A" }),
+      call("update_event", { event: ev.id, location: "Hall B", kind: "tech" }),
+    ]);
+    const raced = await db.select().from(eventChanges).where(eq(eventChanges.eventId, ev.id as string));
+    assert.equal(new Set(raced.map((r) => r.revision)).size, raced.length, `duplicate revisions: ${raced.map((r) => r.revision)}`);
+    console.log("ok - block rooms material, block notes not; concurrent edits serialize");
+
+    // Re-publishing an event families saw before (unpublished on the web) is recorded as "Back on the schedule".
+    await db.update(events).set({ status: "draft" }).where(eq(events.id, ev.id as string));
+    await call("publish_events", { events: [ev.id] });
+    const repub = (await db.select().from(eventChanges).where(eq(eventChanges.eventId, ev.id as string))).sort((x, y) => y.revision - x.revision)[0];
+    assert.match(repub.summary, /^Back on the schedule/, repub.summary);
+    assert.match(repub.personSummaries[wrenId] ?? "", /^Back on the schedule — called/, JSON.stringify(repub.personSummaries));
+    console.log("ok - republish recorded as Back on the schedule");
+
+    /* Web push (only when the server has VAPID keys). web-push only speaks HTTPS, so each test
+       account gets its own local "push service" port and we count connection attempts per port:
+       that proves targeting (one push per affected family, none for unaffected ones) without
+       needing a trusted certificate. */
+    if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+      const hits = new Map<string, { n: number; headers: Record<string, unknown> }>();
+      const servers: ReturnType<typeof createServer>[] = [];
+      const listen = async (who: string) => {
+        const server = createServer((_req, res) => res.writeHead(201).end());
+        server.on("connection", (sock) => {
+          const h = hits.get(who) ?? { n: 0, headers: {} };
+          h.n++;
+          hits.set(who, h);
+          sock.on("error", () => {});
+        });
+        server.on("clientError", (_e, sock) => sock.destroy());
+        await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+        servers.push(server);
+        return (server.address() as { port: number }).port;
+      };
+      const sub = async (userId: string, who: string) => {
+        const ecdh = createECDH("prime256v1");
+        ecdh.generateKeys();
+        return {
+          userId,
+          endpoint: `https://127.0.0.1:${await listen(who)}/${who}`,
+          p256dh: ecdh.getPublicKey().toString("base64url"),
+          auth: randomBytes(16).toString("base64url"),
+        };
+      };
+      // Let pushes queued (via after()) by the earlier edits drain before subscribing.
+      await new Promise((r) => setTimeout(r, 2000));
+      await db.insert(pushSubscriptions).values([await sub(tmpUser.id, "wren"), await sub(junoUser.id, "juno")]);
+      const waitFor = async (pred: () => boolean) => {
+        for (let i = 0; i < 20 && !pred(); i++) await new Promise((r) => setTimeout(r, 250));
+      };
+      // Juno-only change: Juno's family gets one push, Wren's none.
+      await call("update_event", {
+        event: ev.id,
+        blocks: blocksNow.map((b, i) => (i === 0 ? { ...b, location: "Room 2" } : { ...b, end: `${day}T20:45` })),
+      });
+      await waitFor(() => (hits.get("juno")?.n ?? 0) >= 1);
+      await new Promise((r) => setTimeout(r, 750)); // give a wrong push to Wren time to show up
+      assert.equal(hits.get("juno")?.n, 1, `juno pushes: ${JSON.stringify([...hits])}`);
+      assert.equal(hits.get("wren")?.n ?? 0, 0, "unaffected family was pushed");
+      // Cancel: everyone who was called.
+      await call("cancel_event", { event: ev.id, reason: "Push test" });
+      await waitFor(() => (hits.get("wren")?.n ?? 0) >= 1 && (hits.get("juno")?.n ?? 0) >= 2);
+      assert.equal(hits.get("wren")?.n, 1, "cancel didn't reach Wren's family");
+      assert.equal(hits.get("juno")?.n, 2, "cancel didn't reach Juno's family");
+      await call("publish_events", { events: [ev.id] }); // reinstate for the rest of the run
+      for (const sv of servers) sv.close();
+      console.log("ok - push: one per affected family, none for unaffected, cancel reaches all");
+    } else console.log("skip - push (no VAPID keys in env)");
 
     const sched = await call("get_person_schedule", { person: `wren@${EMAIL_DOMAIN}` });
     assert.equal((sched.calls as Json[]).length, 1, JSON.stringify(sched));
@@ -228,6 +371,15 @@ async function main() {
     // Name-only person matching refuses to pick between two namesakes.
     await call("upsert_people", { people: [{ name: `Ann Dup${TAG}`, email: `ann1@${EMAIL_DOMAIN}` }, { name: `Ann Dup${TAG}`, email: `ann2@${EMAIL_DOMAIN}` }] });
     assert.ok(await isErr("upsert_people", { people: [{ name: `Ann Dup${TAG}`, phone: "555" }] }), "ambiguous namesake merged");
+    // delete_role also removes block calls that targeted the role (atomically).
+    const ev4 = await call("create_event", {
+      production: prodId,
+      title: "Role call",
+      blocks: [{ start: `${day}T09:00`, end: `${day}T10:00`, calls: [{ type: "role", ref: "Phantom" }, { type: "all_cast" }] }],
+    });
+    await call("delete_role", { production: prodId, role: "Phantom" });
+    const ev4Calls = ((await call("list_events", { production: prodId })).events as Json[]).find((e) => e.id === ev4.id)!;
+    assert.deepEqual((ev4Calls.blocks as Json[])[0].calls, ["Full cast"], JSON.stringify(ev4Calls));
     console.log("ok - review regressions (rename, bad times, scene refs, no-op blocks, reinstate notes, namesakes)");
 
     /* Errors are reported, not thrown */
@@ -242,6 +394,10 @@ async function main() {
     await assert.rejects(connect(key), "revoked key must be rejected");
     console.log("ok - revoked key rejected");
   } finally {
+    // Fake push subscriptions (local endpoints) go first and explicitly; deleting the temp users
+    // would cascade them too, but this also covers a run that died between the two inserts.
+    for (const id of [tempUserId, ...tempUserIds]) if (id) await db.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, id));
+    for (const id of [tempUserId, ...tempUserIds]) if (id) await db.delete(users).where(eq(users.id, id));
     const deleted = await db.delete(productions).where(and(eq(productions.orgId, admin.orgId), eq(productions.title, TITLE))).returning();
     const gone = await db
       .delete(people)

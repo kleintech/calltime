@@ -10,8 +10,9 @@ import { cn } from "./ui";
 export type NavTab = { href: string; label: string; count?: number; icon?: ReactNode };
 
 function isTabActive(pathname: string, href: string, exactHref?: string) {
-  if (href === exactHref) return pathname === href;
-  return pathname === href || pathname.startsWith(href + "/");
+  const path = href.split(/[?#]/)[0];
+  if (exactHref !== undefined && path === exactHref.split(/[?#]/)[0]) return pathname === path;
+  return pathname === path || pathname.startsWith(path + "/");
 }
 
 /**
@@ -25,6 +26,7 @@ export function NavTabs({
   more,
   exact,
   sticky = false,
+  variant = "pills",
   className,
   "aria-label": ariaLabel = "Sections",
 }: {
@@ -32,6 +34,8 @@ export function NavTabs({
   more?: NavTab[];
   exact?: string;
   sticky?: boolean;
+  /** pills = primary section tabs; underline = second-level tabs inside a section. */
+  variant?: "pills" | "underline";
   className?: string;
   "aria-label"?: string;
 }) {
@@ -41,14 +45,21 @@ export function NavTabs({
 
   useEffect(() => {
     const el = scroller.current?.querySelector<HTMLElement>("[aria-current=page]");
-    el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reduce ? "auto" : "smooth" });
   }, [pathname]);
 
   const pill = (active: boolean) =>
-    cn(
-      "inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-[15px] font-semibold transition-colors duration-150 [&_svg]:size-4",
-      active ? "bg-ink text-bg" : "text-muted hover:bg-ink/[.05] hover:text-ink",
-    );
+    variant === "underline"
+      ? cn(
+          "relative inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap px-3 text-[15px] font-semibold transition-colors duration-150 [&_svg]:size-4",
+          "after:absolute after:inset-x-2 after:-bottom-px after:h-[3px] after:rounded-t-full after:transition-colors",
+          active ? "text-ink after:bg-accent" : "text-muted after:bg-transparent hover:text-ink",
+        )
+      : cn(
+          "inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[15px] font-semibold transition-colors duration-150 [&_svg]:size-4",
+          active ? "bg-ink text-bg" : "text-muted hover:bg-ink/[.05] hover:text-ink",
+        );
 
   return (
     <nav
@@ -59,7 +70,13 @@ export function NavTabs({
         className,
       )}
     >
-      <ul ref={scroller} className="fade-x -mx-4 flex scroll-px-8 gap-1 overflow-x-auto px-4 py-2 scrollbar-none md:mx-0 md:px-0 md:[mask-image:none]">
+      <ul
+        ref={scroller}
+        className={cn(
+          "fade-x -mx-4 flex scroll-px-8 gap-1 overflow-x-auto px-4 scrollbar-none md:mx-0 md:px-0 md:[mask-image:none]",
+          variant === "underline" ? "border-b border-line pt-1" : "py-1.5",
+        )}
+      >
         {tabs.map((t) => {
           const active = isTabActive(pathname, t.href, exact);
           return (
@@ -67,7 +84,7 @@ export function NavTabs({
               <Link href={t.href} aria-current={active ? "page" : undefined} className={pill(active)}>
                 {t.icon}
                 {t.label}
-                {t.count != null ? <span className="tabular text-xs opacity-70">{t.count}</span> : null}
+                {t.count ? <span className="tabular rounded-full bg-ink/[.07] px-1.5 text-xs font-semibold leading-5">{t.count}</span> : null}
               </Link>
             </li>
           );
@@ -153,18 +170,29 @@ export function Tabs({
       <div
         role="tablist"
         aria-label={ariaLabel}
-        className="fade-x -mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 scrollbar-none"
+        className="fade-x -mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 pt-1 scrollbar-none"
+        onKeyDown={(e) => {
+          const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
+          if (!keys.includes(e.key)) return;
+          e.preventDefault();
+          const i = Math.max(0, items.findIndex((it) => it.value === value));
+          const n = items.length;
+          const next = e.key === "Home" ? 0 : e.key === "End" ? n - 1 : (i + (e.key === "ArrowRight" ? 1 : n - 1)) % n;
+          setValue(items[next].value);
+          e.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
+        }}
       >
-        {items.map((it) => {
+        {items.map((it, idx) => {
           const active = it.value === value;
           return (
             <button
               key={it.value}
               type="button"
               role="tab"
-              id={`${baseId}-t-${it.value}`}
+              id={`${baseId}-t-${idx}`}
               aria-selected={active}
-              aria-controls={`${baseId}-p-${it.value}`}
+              aria-controls={`${baseId}-p-${idx}`}
+              tabIndex={active ? 0 : -1}
               onClick={() => setValue(it.value)}
               className={cn(
                 "relative inline-flex min-h-11 shrink-0 items-center gap-1.5 px-3 text-[15px] font-semibold whitespace-nowrap transition-colors",
@@ -184,12 +212,13 @@ export function Tabs({
           );
         })}
       </div>
-      {items.map((it) => (
+      {items.map((it, idx) => (
         <div
           key={it.value}
           role="tabpanel"
-          id={`${baseId}-p-${it.value}`}
-          aria-labelledby={`${baseId}-t-${it.value}`}
+          id={`${baseId}-p-${idx}`}
+          aria-labelledby={`${baseId}-t-${idx}`}
+          tabIndex={0}
           hidden={it.value !== value}
           className="pt-4"
         >

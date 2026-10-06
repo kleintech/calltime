@@ -15,8 +15,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const active = productions.filter((p) => p.production.status !== "closed");
   const creative = active.filter((p) => p.relation === "creative");
   const isFamily = active.some((p) => p.relation === "cast");
-  // A single active show opens directly; otherwise the list.
-  const onlyShow = active.length === 1 ? active[0].production : null;
+  // A user with exactly one show (active or not) goes straight to it; otherwise the list.
+  const onlyShow = productions.length === 1 ? productions[0].production : null;
 
   const items: NavItem[] = [{ href: "/home", label: "Calls", icon: "calls" }];
 
@@ -30,7 +30,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   }
 
   if (onlyShow) items.push({ href: `/p/${onlyShow.id}`, label: "Show", icon: "show" });
-  else if (active.length > 0 || isOrgAdmin) items.push({ href: "/productions", label: "Shows", icon: "productions", match: ["/p/"] });
+  else if (productions.length > 0 || isOrgAdmin) items.push({ href: "/productions", label: "Shows", icon: "productions", match: ["/p/"] });
 
   if (isOrgAdmin) items.push({ href: "/org", label: "Company", icon: "org" });
   items.push({ href: "/account", label: "Me", icon: "account" });

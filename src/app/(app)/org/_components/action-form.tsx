@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useTransition, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
+import { toast } from "@/components/toast";
 import { Button, Notice, cn } from "@/components/ui";
 import type { FormState } from "./form-state";
 import { ShareInvite } from "./share-invite";
@@ -39,7 +40,8 @@ export function ActionForm({
 
   useEffect(() => {
     if (state.error) errorRef.current?.focus();
-    else if ((state.ok || state.link) && resetOnSuccess) formRef.current?.reset();
+    else if (state.ok && !state.link) toast(state.ok, { tone: "success" });
+    if (!state.error && (state.ok || state.link) && resetOnSuccess) formRef.current?.reset();
   }, [state, resetOnSuccess]);
 
   return (
@@ -55,11 +57,6 @@ export function ActionForm({
       {state.error ? (
         <div ref={errorRef} tabIndex={-1} role="alert" className="outline-none">
           <Notice tone="danger">{state.error}</Notice>
-        </div>
-      ) : null}
-      {state.ok && !state.link ? (
-        <div role="status">
-          <Notice tone="success">{state.ok}</Notice>
         </div>
       ) : null}
       {state.link ? <InviteLinkBox key={state.link} url={state.link} title={state.ok} message={state.message} /> : null}
@@ -88,12 +85,14 @@ export function SubmitButton({
   confirm,
   className,
   pendingLabel,
+  size = "md",
 }: {
   children: ReactNode;
   variant?: Variant;
   confirm?: string;
   className?: string;
   pendingLabel?: string;
+  size?: "sm" | "md";
 }) {
   const { pending } = useFormStatus();
   return (
@@ -101,7 +100,8 @@ export function SubmitButton({
       type="submit"
       variant={variant}
       disabled={pending}
-      className={cn("px-3", className)}
+      size={size}
+      className={cn(size === "md" && "px-3", className)}
       onClick={(e) => {
         if (confirm && !window.confirm(confirm)) e.preventDefault();
       }}

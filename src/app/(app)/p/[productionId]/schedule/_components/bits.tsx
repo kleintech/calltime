@@ -19,13 +19,16 @@ export function StatusBadges({
   tz,
   now,
   showPublished = false,
+  changed: changedOverride,
 }: {
   event: BadgeEvent;
   tz: string;
   now: Date;
   showPublished?: boolean;
+  /** Per-viewer change date (e.g. unacknowledged change); overrides the 7-day heuristic when given. */
+  changed?: Date | null;
 }) {
-  const changed = recentChange(event, now);
+  const changed = changedOverride !== undefined ? changedOverride : recentChange(event, now);
   return (
     <>
       {event.status === "draft" ? <Badge tone="warn">Draft</Badge> : null}

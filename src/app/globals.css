@@ -25,6 +25,7 @@
   --muted: #615a6d;
   --line: #e6e0d6;
   --line-strong: #d2cabd;
+  --control: #857d8f; /* form-control borders: ≥ 3:1 on surface/bg (WCAG 1.4.11) */
   --accent: #6d28d9; /* curtain violet */
   --accent-hover: #5b1fc0;
   --accent-ink: #ffffff;
@@ -71,6 +72,7 @@
     --muted: #a59fb4;
     --line: #2c2737;
     --line-strong: #3d3649;
+    --control: #7a7287;
     --accent: #a78bfa;
     --accent-hover: #b9a1fb;
     --accent-ink: #170d2e;
@@ -107,6 +109,7 @@
   --muted: #a59fb4;
   --line: #2c2737;
   --line-strong: #3d3649;
+  --control: #7a7287;
   --accent: #a78bfa;
   --accent-hover: #b9a1fb;
   --accent-ink: #170d2e;
@@ -143,6 +146,7 @@
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
+  --color-control: var(--control);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-ink: var(--accent-ink);
@@ -361,6 +365,7 @@
   }
 }
 
+@layer components {
 /* Page enter: content of each route fades in. Opacity only, so position:fixed children (Fab,
    ActionBar) are never re-parented by a transform. */
 [data-page] > * {
@@ -471,6 +476,7 @@ html:has(dialog[open]:modal) {
       max-width: 20rem;
     }
   }
+}
 }
 
 @media (prefers-reduced-motion: reduce) {

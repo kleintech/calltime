@@ -16,7 +16,7 @@ export default async function ConflictsPage({ searchParams }: PageProps<"/home/c
   const sp = await searchParams;
   const str = (k: string, re: RegExp) => (typeof sp[k] === "string" && re.test(sp[k]) ? sp[k] : undefined);
   const covered = await getCoveredPersonIds(user.id);
-  const back = { href: "/home", label: "My Calls" };
+  const back = { href: "/home", label: "Calls" };
 
   if (covered.length === 0) {
     return (
@@ -25,7 +25,7 @@ export default async function ConflictsPage({ searchParams }: PageProps<"/home/c
         <EmptyState
           title="No one to report for"
           body="Conflicts are for performers and their guardians. Once your account is linked to a cast member, you can report when they're unavailable."
-          action={<LinkButton href="/home" variant="secondary">Back to My Calls</LinkButton>}
+          action={<LinkButton href="/home" variant="secondary">Back to Calls</LinkButton>}
         />
       </div>
     );

@@ -6,6 +6,8 @@ import { db } from "@/db";
 import { guardianships, invites, people, roleAssignments, roles } from "@/db/schema";
 import { Avatar, Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { requireProductionEditor } from "@/lib/access";
+import { getAttendanceSummary } from "@/lib/schedule";
+import { fmtDay } from "@/lib/time";
 import { isUuid, personName } from "@/lib/production-queries";
 import { ConfirmForm, IconSubmit } from "@/app/(app)/productions/_components/form";
 import { addGuardian, addRoleToPerson, invitePerson, removeAssignment, removeGuardian, setAssignmentKind, updatePerson } from "../actions";
@@ -72,6 +74,7 @@ export default async function PersonPage({ params }: PageProps<"/p/[productionId
     .orderBy(asc(people.lastName), asc(people.firstName));
   const existingGuardianIds = new Set(guardians.map((g) => g.guardian.id));
 
+  const att = mine.length ? (await getAttendanceSummary(productionId)).get(personId) : undefined;
   const roleById = new Map(roleRows.map((r) => [r.id, r]));
   const heldIds = new Set(mine.map((m) => m.roleId));
   const roleOpts = roleRows.filter((r) => !heldIds.has(r.id)).map((r) => ({ id: r.id, name: r.name, kind: r.kind, castCount: 1 }));
@@ -120,6 +123,39 @@ export default async function PersonPage({ params }: PageProps<"/p/[productionId
           </div>
           <Card className="mt-3">
             <AddRoleForm action={addRoleToPerson.bind(null, productionId, personId)} roles={roleOpts} />
+          </Card>
+        </>
+      ) : null}
+
+      {mine.length ? (
+        <>
+          <SectionTitle>Attendance</SectionTitle>
+          <Card>
+            {att?.marked ? (
+              <>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {(
+                    [
+                      ["Here", att.present, "text-success"],
+                      ["Late", att.late, "text-warn"],
+                      ["Absent", att.absent, "text-danger"],
+                      ["Excused", att.excused, "text-muted"],
+                    ] as const
+                  ).map(([label, n, tone]) => (
+                    <div key={label} className="rounded-xl bg-surface-2 py-2">
+                      <p className={`text-lg font-semibold tabular-nums ${tone}`}>{n}</p>
+                      <p className="text-xs text-muted">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm text-muted">
+                  Marked at {att.marked} {att.marked === 1 ? "rehearsal" : "rehearsals"}
+                  {att.lastAbsentAt ? ` · last absent ${fmtDay(att.lastAbsentAt, org.timezone)}` : " · never absent"}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted">No attendance taken yet. The stage manager marks it from each event&apos;s call sheet.</p>
+            )}
           </Card>
         </>
       ) : null}

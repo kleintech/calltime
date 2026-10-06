@@ -56,7 +56,10 @@ export function parseForm<S extends z.ZodType>(schema: S, fd: FormData): z.infer
   return res.data;
 }
 
+const FIELD_LABELS: Record<string, string> = { url: "Link" };
+
 function humanize(s: string) {
+  if (FIELD_LABELS[s]) return FIELD_LABELS[s];
   return s.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
 }
 
@@ -295,6 +298,11 @@ export async function getMaterialsForPeople(productionId: string, personIds: str
 }
 
 /** Remove schedule calls that point at a deleted scene/role/group (blockCalls has no FK). */
-export async function deleteCallsTargeting(target: "scene" | "role" | "group", targetId: string) {
-  await db.delete(blockCalls).where(and(eq(blockCalls.target, target), eq(blockCalls.targetId, targetId)));
+/** Pass a transaction as `q` to make this atomic with the caller's other deletes (default: `db`). */
+export async function deleteCallsTargeting(
+  target: "scene" | "role" | "group",
+  targetId: string,
+  q: Pick<typeof db, "delete"> = db,
+) {
+  await q.delete(blockCalls).where(and(eq(blockCalls.target, target), eq(blockCalls.targetId, targetId)));
 }

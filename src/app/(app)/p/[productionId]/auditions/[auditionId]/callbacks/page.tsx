@@ -203,7 +203,7 @@ export default async function CallbacksPage({ params }: PageProps<"/p/[productio
                           {fullName(p)}
                           {p.callbackSlotId &&
                           cbSlotById.get(p.callbackSlotId) &&
-                          clashes(p.conflictDates, tz, cbSlotById.get(p.callbackSlotId)!.startsAt, cbSlotById.get(p.callbackSlotId)!.endsAt)
+                          clashes(p.conflictDates, tz, cbSlotById.get(p.callbackSlotId)!.startsAt, cbSlotById.get(p.callbackSlotId)!.endsAt, production.closingDate)
                             .length ? (
                             <span className="ml-1 text-danger">⚠ conflict</span>
                           ) : null}

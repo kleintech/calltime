@@ -29,7 +29,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/home/ca
       <PageHeader
         title="Add to your calendar"
         subtitle="See every call in the calendar app you already use."
-        back={{ href: "/home", label: "My Calls" }}
+        back={{ href: "/home", label: "Calls" }}
       />
 
       {reset ? (
