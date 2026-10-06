@@ -11,7 +11,7 @@ export function StatusBadge({ status }: { status: SignupStatus }) {
 export function Stars({ rating, className }: { rating: number | null; className?: string }) {
   if (!rating) return null;
   return (
-    <span className={cn("inline-flex items-center gap-0.5 text-gold", className)} aria-label={`${rating} of 5`}>
+    <span role="img" className={cn("inline-flex items-center gap-0.5 text-gold", className)} aria-label={`${rating} of 5`}>
       {Array.from({ length: rating }, (_, i) => (
         <Star key={i} className="size-3.5 fill-current" />
       ))}

@@ -279,12 +279,11 @@ export default async function SchedulePage({ params, searchParams }: PageProps<"
         </div>
       )}
       {coveredPeople.length > 0 && !canEdit ? (
-        <p className="mt-8 text-center text-sm text-muted">
-          Can&apos;t make a rehearsal?{" "}
-          <Link href="/home/conflicts" className="font-medium text-accent">
-            Report a conflict
-          </Link>
-        </p>
+        <div className="mt-8 flex justify-center">
+          <LinkButton href="/home/conflicts" variant="ghost">
+            <TriangleAlert /> Can&apos;t make a rehearsal? Tell the team
+          </LinkButton>
+        </div>
       ) : null}
     </div>
   );

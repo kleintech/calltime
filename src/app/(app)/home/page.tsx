@@ -144,7 +144,7 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
         .from(announcements)
         .where(and(inArray(announcements.productionId, castProdIds), or(eq(announcements.pinned, true), gte(announcements.createdAt, new Date(now.getTime() - 7 * 86400_000)))))
         .orderBy(desc(announcements.pinned), desc(announcements.createdAt))
-        .limit(3)
+        .limit(2)
     : [];
   const prodById = new Map(productions.map((p) => [p.production.id, p.production]));
   const unreadNotes = new Map(
@@ -266,8 +266,59 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
         </Link>
       ) : null}
 
+      {days.size > 0 ? (
+        <div className="mt-8 space-y-6">
+          <h2 className="font-display text-xl font-semibold">Coming up</h2>
+          {[...days.entries()].map(([k, d]) => (
+            <section key={k}>
+              <h3 className="mb-2 text-sm font-semibold text-muted">{d.label}</h3>
+              <div className="space-y-2">
+                {d.groups.map((g) => (
+                  <CallCard key={g.key} group={g} multi={multi} showProduction={multiProduction} now={now} changed={changedAt(g.key)} changes={unacked.get(g.key)?.changes.flatMap((c) => c.lines) ?? []} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : null}
+
+      {covered.length > 0 ? (
+        <Link href="/home/conflicts" className="mt-6 flex min-h-12 items-center gap-2 rounded-xl px-1 text-sm text-muted hover:text-ink">
+          <TriangleAlert className="size-4" />
+          <span className="flex-1">Can&apos;t make a rehearsal? Tell the team</span>
+          <ChevronRight className="size-4" />
+        </Link>
+      ) : null}
+
+      {annRows.length > 0 ? (
+        <section className="mt-6">
+          <h2 className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[.08em] text-muted">
+            <Megaphone className="size-4" /> From the team
+          </h2>
+          <div className="space-y-2">
+            {annRows.map((a) => {
+              const isNew = now.getTime() - a.createdAt.getTime() < 48 * 3600_000;
+              return (
+                <Link
+                  key={a.id}
+                  href={`/p/${a.productionId}`}
+                  className="block rounded-2xl border border-line/80 bg-surface p-4 shadow-card transition-[box-shadow,transform] duration-200 hover:shadow-raised active:scale-[.99]"
+                >
+                  <p className="flex flex-wrap items-center gap-2 font-medium">
+                    {a.title}
+                    {isNew ? <Badge tone="accent">New</Badge> : a.pinned ? <Badge>Pinned</Badge> : null}
+                  </p>
+                  <p className="mt-0.5 line-clamp-1 text-[15px] text-muted">{a.body}</p>
+                  {castProdIds.length > 1 ? <p className="mt-1 text-xs text-muted">{prodById.get(a.productionId)?.title}</p> : null}
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       {castProdIds.length > 0 ? (
-        <nav className="mt-3 space-y-3" aria-label="Show resources">
+        <nav className="mt-8 space-y-3" aria-label="Show resources">
           {castProdIds.map((id) => {
             const n = unreadNotes.get(id) ?? 0;
             const prod = prodById.get(id);
@@ -301,57 +352,6 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
             );
           })}
         </nav>
-      ) : null}
-
-      {annRows.length > 0 ? (
-        <section className="mt-6">
-          <h2 className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold uppercase tracking-[.08em] text-muted">
-            <Megaphone className="size-4" /> From the team
-          </h2>
-          <div className="space-y-2">
-            {annRows.map((a) => {
-              const isNew = now.getTime() - a.createdAt.getTime() < 48 * 3600_000;
-              return (
-                <Link
-                  key={a.id}
-                  href={`/p/${a.productionId}`}
-                  className="block rounded-2xl border border-line/80 bg-surface p-4 shadow-card transition-[box-shadow,transform] duration-200 hover:shadow-raised active:scale-[.99]"
-                >
-                  <p className="flex flex-wrap items-center gap-2 font-medium">
-                    {a.title}
-                    {isNew ? <Badge tone="accent">New</Badge> : a.pinned ? <Badge>Pinned</Badge> : null}
-                  </p>
-                  <p className="mt-0.5 line-clamp-2 text-[15px] text-muted">{a.body}</p>
-                  {castProdIds.length > 1 ? <p className="mt-1 text-xs text-muted">{prodById.get(a.productionId)?.title}</p> : null}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {days.size > 0 ? (
-        <div className="mt-8 space-y-6">
-          <h2 className="font-display text-xl font-semibold">Coming up</h2>
-          {[...days.entries()].map(([k, d]) => (
-            <section key={k}>
-              <h3 className="mb-2 text-sm font-semibold text-muted">{d.label}</h3>
-              <div className="space-y-2">
-                {d.groups.map((g) => (
-                  <CallCard key={g.key} group={g} multi={multi} showProduction={multiProduction} now={now} changed={changedAt(g.key)} changes={unacked.get(g.key)?.changes.flatMap((c) => c.lines) ?? []} />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      ) : null}
-
-      {covered.length > 0 ? (
-        <Link href="/home/conflicts" className="mt-6 flex min-h-12 items-center gap-2 rounded-xl px-1 text-sm text-muted hover:text-ink">
-          <TriangleAlert className="size-4" />
-          <span className="flex-1">Can&apos;t make a rehearsal? Tell the team</span>
-          <ChevronRight className="size-4" />
-        </Link>
       ) : null}
 
       {covered.length === 0 && running.length === 0 ? (

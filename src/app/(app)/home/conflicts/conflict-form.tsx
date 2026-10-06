@@ -111,10 +111,10 @@ export function DeleteConflictButton({ id }: { id: string }) {
     <button
       type="button"
       disabled={pending}
-      aria-label="Delete conflict"
+      aria-label="Remove this absence"
       className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-danger-soft hover:text-danger disabled:opacity-50"
       onClick={() => {
-        if (!window.confirm("Remove this conflict?")) return;
+        if (!window.confirm("Remove this absence? The team will no longer see it when planning.")) return;
         start(async () => {
           await deleteConflict(id);
         });

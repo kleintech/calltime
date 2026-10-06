@@ -43,7 +43,7 @@ export function personHue(name: string) {
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
   return h;
 }
-export const personColor = (name: string) => `hsl(${personHue(name)} 45% 45%)`;
+export const personColor = (name: string) => `hsl(${personHue(name)} 45% 36%)`;
 
 export const personName = (p: { firstName: string; lastName: string }) => `${p.firstName} ${p.lastName}`.trim();
 

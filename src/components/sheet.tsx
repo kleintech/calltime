@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { buttonClass, cn, type ButtonVariant } from "./ui";
 
 /*
@@ -63,9 +63,20 @@ export function Sheet({
   return (
     <>
       {trigger ? (
-        <span className="contents" onClick={() => setOpen(true)}>
-          {trigger}
-        </span>
+        isValidElement(trigger) ? (
+          cloneElement(trigger as ReactElement<Record<string, unknown>>, {
+            "aria-haspopup": "dialog",
+            "aria-expanded": open,
+            onClick: (e: unknown) => {
+              (trigger as ReactElement<{ onClick?: (e: unknown) => void }>).props.onClick?.(e);
+              setOpen(true);
+            },
+          })
+        ) : (
+          <span className="contents" onClick={() => setOpen(true)}>
+            {trigger}
+          </span>
+        )
       ) : null}
       <dialog
         ref={ref}

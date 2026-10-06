@@ -21,23 +21,23 @@ export default async function PublicAuditionLayout({ children, params }: LayoutP
   if (!row) notFound();
   const { production, org } = row;
   const accent = /^#[0-9a-f]{3,8}$/i.test(production.accentColor) ? production.accentColor : "#6d28d9";
-  const style = {
-    "--accent": accent,
-    "--accent-ink": "#ffffff",
-    "--accent-soft": `color-mix(in srgb, ${accent} 14%, var(--surface))`,
-  } as CSSProperties;
+  // The production color is a user-picked tint only (docs/DESIGN.md): never text, button fill or the
+  // focus ring, so contrast for a signed-out parent arriving from a flyer never depends on it.
+  const style = { "--prod": accent } as CSSProperties;
 
   return (
     <div style={style} className="min-h-dvh">
-      <header className="relative overflow-hidden bg-accent text-accent-ink">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,.22),transparent_60%)]" aria-hidden />
+      <header className="relative overflow-hidden border-b border-line bg-[color-mix(in_oklab,var(--prod)_16%,var(--bg))]">
         <div className="relative mx-auto max-w-xl px-4 pb-8 pt-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">{org.name}</p>
-          <h1 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">{production.title}</h1>
-          {production.subtitle ? <p className="mt-1 opacity-90">{production.subtitle}</p> : null}
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+            <span aria-hidden className="size-2.5 rounded-full" style={{ background: "var(--prod)" }} />
+            {org.name}
+          </p>
+          <h1 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-tight text-ink sm:text-4xl">{production.title}</h1>
+          {production.subtitle ? <p className="mt-1 text-muted">{production.subtitle}</p> : null}
         </div>
       </header>
-      <main className="mx-auto -mt-4 max-w-xl px-4 pb-16">{children}</main>
+      <main id="main" tabIndex={-1} className="mx-auto -mt-4 max-w-xl px-4 pb-16 outline-none">{children}</main>
       <footer className="pb-8 text-center text-xs text-muted">
         Scheduling by <span className="font-display font-semibold text-ink">Call<span className="text-gold">time</span></span>
       </footer>

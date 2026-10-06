@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { Check, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import { cloneElement, isValidElement, useId, type ComponentProps, type CSSProperties, type ReactElement, type ReactNode } from "react";
 
 /*
  * Shared UI primitives — see docs/DESIGN.md for usage.
@@ -320,7 +320,7 @@ export function Chip({
   );
   const cls = cn(chipBase, active ? chipActive : chipIdle, "[&_svg]:size-4", className);
   return href ? (
-    <Link href={href} className={cls} aria-current={active ? "page" : undefined} scroll={false}>
+    <Link href={href} className={cls} aria-current={active ? "page" : undefined} scroll={false} {...(props as Omit<ComponentProps<typeof Link>, "href" | "children">)}>
       {inner}
     </Link>
   ) : (
@@ -379,7 +379,7 @@ export function SegmentedLinks({
           aria-current={it.active ? "page" : undefined}
           scroll={false}
           className={cn(
-            "inline-flex min-h-10 flex-1 items-center justify-center rounded-full px-4 text-sm font-semibold whitespace-nowrap transition-colors",
+            "inline-flex min-h-11 flex-1 items-center justify-center rounded-full px-4 text-sm font-semibold whitespace-nowrap transition-colors",
             it.active ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
           )}
         >
@@ -419,6 +419,7 @@ export function TimePill({
         className,
       )}
     >
+      {strike ? <span className="sr-only">Cancelled </span> : null}
       {children}
     </span>
   );
@@ -443,13 +444,15 @@ export function CallTime({
 }) {
   return (
     <div className={className}>
-      {label ? <div className="text-xs font-semibold uppercase tracking-[.08em] text-muted">{label}</div> : null}
+      {label ? (
+        <div className="text-xs font-semibold uppercase tracking-[.08em] text-muted">{strike && label === "Called" ? "Cancelled" : label}</div>
+      ) : null}
       <div
         className={cn(
           "font-display tabular font-semibold tracking-tight text-ink",
           size === "md" && "text-2xl",
           size === "lg" && "text-[2rem] leading-[2.375rem]",
-          size === "xl" && "text-[2.5rem] leading-[2.75rem] sm:text-5xl",
+          size === "xl" && "text-[clamp(1.875rem,8.5vw,2.5rem)] leading-[1.1] sm:text-5xl",
           strike && "text-muted line-through decoration-danger decoration-[3px]",
         )}
         style={{ fontVariationSettings: '"opsz" 72, "SOFT" 30' }}
@@ -481,7 +484,7 @@ export function PersonChip({
   size?: "sm" | "md";
   className?: string;
 }) {
-  const c = color ?? `hsl(${hueOf(name)} 45% 45%)`;
+  const c = color ?? `hsl(${hueOf(name)} 45% 36%)`;
   return (
     <span
       className={cn(
@@ -495,7 +498,7 @@ export function PersonChip({
         aria-hidden
         className={cn(
           "inline-flex items-center justify-center rounded-full font-bold text-white",
-          size === "sm" ? "size-5 text-[10px]" : "size-6 text-[11px]",
+          size === "sm" ? "size-5 text-[12px]" : "size-6 text-[12px]",
         )}
         style={{ background: c }}
       >
@@ -509,7 +512,7 @@ export function PersonChip({
 /* ───────────────────────────── Forms ───────────────────────────── */
 
 const fieldInput =
-  "w-full rounded-xl border border-control bg-surface px-3.5 min-h-11 text-base text-ink shadow-[inset_0_1px_2px_rgb(var(--shadow-color)/.04)] placeholder:text-muted/80 transition-[border-color,box-shadow] duration-150 hover:border-ink/60 focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:opacity-55 disabled:bg-surface-2 aria-invalid:border-danger aria-invalid:focus:ring-danger/15";
+  "w-full rounded-xl border border-control bg-surface px-3.5 min-h-11 text-base text-ink shadow-[inset_0_1px_2px_rgb(var(--shadow-color)/.04)] placeholder:text-muted/80 transition-[border-color,box-shadow] duration-150 hover:border-ink/60 focus:border-accent focus-visible:ring-4 focus-visible:ring-accent/15 disabled:opacity-55 disabled:bg-surface-2 aria-invalid:border-danger aria-invalid:focus-visible:ring-danger/15";
 
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input className={cn(fieldInput, className)} {...props} />;
@@ -542,27 +545,47 @@ export function Field({
 }: {
   label: string;
   hint?: ReactNode;
-  /** Inline error under the field. Also set aria-invalid on the input. */
+  /** Inline error under the field. The control gets aria-invalid + aria-describedby automatically. */
   error?: ReactNode;
   /** Appends a quiet "(optional)" to the label. */
   optional?: boolean;
   children: ReactNode;
   className?: string;
 }) {
+  const id = useId();
+  const hintId = `${id}-hint`;
+  const errorId = `${id}-error`;
+  // Wire hint/error to the control for screen readers when the child is a single form control
+  // (Input/Select/Textarea or a raw element). Wrapper children keep working via the implicit label.
+  let control = children;
+  if (isValidElement(children)) {
+    const el = children as ReactElement<Record<string, unknown>>;
+    const t = el.type;
+    const isControl = t === Input || t === Select || t === Textarea || t === "input" || t === "select" || t === "textarea";
+    if (isControl) {
+      const described = [el.props["aria-describedby"], error ? errorId : hint ? hintId : null].filter(Boolean).join(" ");
+      control = cloneElement(el, {
+        "aria-describedby": described || undefined,
+        "aria-invalid": el.props["aria-invalid"] ?? (error ? true : undefined),
+      });
+    }
+  }
   return (
     <label className={cn("block space-y-1.5", className)}>
-      <span className="block text-[15px] font-semibold text-ink">
+      <span className="block text-sm font-semibold text-ink">
         {label}
         {optional ? <span className="font-normal text-muted"> (optional)</span> : null}
       </span>
-      {children}
+      {control}
       {error ? (
-        <span className="flex items-start gap-1.5 text-sm font-medium text-danger">
+        <span id={errorId} role="alert" className="flex items-start gap-1.5 text-sm font-medium text-danger">
           <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
           {error}
         </span>
       ) : hint ? (
-        <span className="block text-sm text-muted">{hint}</span>
+        <span id={hintId} className="block text-sm text-muted">
+          {hint}
+        </span>
       ) : null}
     </label>
   );
@@ -760,7 +783,7 @@ export function ListRow({
   );
   const cls = cn(
     "flex min-h-14 items-center gap-3 px-4 py-3",
-    href && "transition-colors hover:bg-surface-2/70 active:bg-surface-2",
+    href && "transition-colors hover:bg-surface-2/70 active:bg-surface-2 focus-visible:rounded-xl focus-visible:[outline-offset:-3px]",
     className,
   );
   return href ? (
@@ -815,8 +838,8 @@ export function IconTile({
 }
 
 const avatarSizes = {
-  xs: ["size-6", "text-[10px]"],
-  sm: ["size-8", "text-[11px]"],
+  xs: ["size-6", "text-[12px]"],
+  sm: ["size-8", "text-[12px]"],
   md: ["size-9", "text-xs"],
   lg: ["size-12", "text-base"],
   xl: ["size-16", "text-xl"],
@@ -848,7 +871,7 @@ export function Avatar({
         sized,
         className,
       )}
-      style={{ background: `linear-gradient(145deg, hsl(${h} 48% 44%), hsl(${h} 50% 32%))` }}
+      style={{ background: `linear-gradient(145deg, hsl(${h} 48% 36%), hsl(${h} 50% 26%))` }}
       aria-hidden
     >
       {initials || "?"}
@@ -883,11 +906,14 @@ export function Notice({
   const DefaultIcon = { neutral: Info, danger: CircleAlert, success: CircleCheck, warn: TriangleAlert, accent: Info, gold: Info }[tone];
   const shownIcon = icon === undefined ? <DefaultIcon /> : icon;
   return (
-    <div role={tone === "danger" ? "alert" : undefined} className={cn("flex items-start gap-3 rounded-2xl px-4 py-3 text-[15px]", tones[tone], className)}>
+    <div
+      role={tone === "danger" ? "alert" : tone === "success" || tone === "warn" ? "status" : undefined}
+      className={cn("flex items-start gap-3 rounded-2xl px-4 py-3 text-sm", tones[tone], className)}
+    >
       {shownIcon ? <span className="mt-px shrink-0 [&_svg]:size-5">{shownIcon}</span> : null}
       <div className="min-w-0 flex-1">
         {title ? <div className="font-semibold">{title}</div> : null}
-        {children ? <div className={cn(title && "mt-0.5 opacity-90")}>{children}</div> : null}
+        {children ? <div className={cn(title && "mt-0.5 font-normal")}>{children}</div> : null}
       </div>
       {action ? <div className="-my-1 shrink-0">{action}</div> : null}
     </div>
@@ -1029,6 +1055,7 @@ export function Menu({
       <button
         type="button"
         popoverTarget={id}
+        aria-haspopup="true"
         aria-label={trigger ? undefined : label}
         title={label}
         className={cn(trigger ? buttonClass("secondary") : cn(iconButtonBase, iconButtonSizes.md, iconButtonVariants.ghost), className)}
@@ -1045,6 +1072,7 @@ export function Menu({
       <div
         id={id}
         popover="auto"
+        role="group"
         aria-label={label}
         className="ct-menu overflow-hidden rounded-3xl border border-line/80 bg-surface p-1.5 text-ink shadow-overlay sm:rounded-2xl"
         style={{ positionAnchor: anchor } as CSSProperties}
@@ -1065,7 +1093,7 @@ export function MenuItem({
   ...props
 }: { href?: string; icon?: ReactNode; tone?: "default" | "danger"; children: ReactNode } & Omit<ComponentProps<"button">, "children">) {
   const cls = cn(
-    "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-base font-medium transition-colors hover:bg-surface-2 sm:min-h-11 sm:text-[15px] [&_svg]:size-5 [&_svg]:shrink-0",
+    "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-base font-medium transition-colors hover:bg-surface-2 focus-visible:[outline-offset:-2px] sm:min-h-11 sm:text-sm [&_svg]:size-5 [&_svg]:shrink-0",
     tone === "danger" ? "text-danger" : "text-ink [&_svg]:text-muted",
     className,
   );

@@ -24,7 +24,7 @@ export default async function ConflictsPage({ searchParams }: PageProps<"/home/c
         <PageHeader title="Can't make it" back={back} />
         <EmptyState
           title="No one to report for"
-          body="Conflicts are for performers and their guardians. Once your account is linked to a cast member, you can report when they're unavailable."
+          body="Absences are for performers and their guardians. Once your account is linked to a cast member, you can tell the team when they can't make it."
           action={<LinkButton href="/home" variant="secondary">Back to Calls</LinkButton>}
         />
       </div>

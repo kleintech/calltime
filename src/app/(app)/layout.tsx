@@ -38,10 +38,18 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   return (
     <div data-app-shell className="min-h-dvh md:pl-60">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-full focus:bg-surface focus:px-4 focus:py-3 focus:font-semibold focus:text-ink focus:shadow-overlay"
+      >
+        Skip to content
+      </a>
       <AppNav items={items} user={{ name: user.name, email: user.email }} />
       <main
+        id="main"
+        tabIndex={-1}
         data-page
-        className="mx-auto w-full max-w-3xl px-4 pb-[calc(var(--bottom-chrome)+env(safe-area-inset-bottom)+2rem)] pt-4 md:px-8 md:pb-16 md:pt-10"
+        className="mx-auto w-full max-w-3xl px-4 outline-none pb-[calc(var(--bottom-chrome)+env(safe-area-inset-bottom)+2rem)] pt-4 md:px-8 md:pb-16 md:pt-10"
       >
         {children}
       </main>

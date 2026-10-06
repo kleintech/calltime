@@ -126,7 +126,7 @@ export function Toaster() {
                   t.action!.onClick();
                   dismissToast(t.id);
                 }}
-                className="min-h-11 rounded-full bg-bg/15 px-3.5 text-sm font-semibold hover:bg-bg/25"
+                className="min-h-11 rounded-full bg-bg/15 px-3.5 text-sm font-semibold hover:bg-bg/25 focus-visible:outline-bg"
               >
                 {t.action.label}
               </button>
@@ -135,7 +135,7 @@ export function Toaster() {
               type="button"
               aria-label="Dismiss"
               onClick={() => dismissToast(t.id)}
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full opacity-60 hover:bg-bg/15 hover:opacity-100"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-full opacity-60 hover:bg-bg/15 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-bg"
             >
               <X className="size-4" />
             </button>

@@ -489,6 +489,11 @@ html:has(dialog[open]:modal) {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  /* A slow spin still says "busy" without motion sickness; a frozen arc reads as broken. */
+  .animate-spin {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /* Print: call sheets print clean — no chrome, no shadows. */
@@ -501,5 +506,11 @@ html:has(dialog[open]:modal) {
   }
   [data-app-shell] {
     padding: 0 !important;
+  }
+  :root {
+    --bottom-chrome: 0px;
+  }
+  main[data-page] {
+    padding-bottom: 0 !important;
   }
 }

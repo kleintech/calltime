@@ -53,6 +53,7 @@ export function KindIcon({ kind, color, className }: { kind: EventKind; color?: 
     <span
       className={cn("inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent", className)}
       style={color ? { background: `color-mix(in oklab, ${color} 14%, transparent)`, color } : undefined}
+      role="img"
       aria-label={KIND_META[kind].label}
     >
       <Icon className="size-5" />
@@ -68,7 +69,7 @@ export function PersonChip({ name, children, className }: { name: string; childr
       className={cn("inline-flex items-center gap-1.5 rounded-full py-0.5 pl-1 pr-2.5 text-xs font-semibold", className)}
       style={{ background: `color-mix(in oklab, ${color} 16%, transparent)`, color }}
     >
-      <span className="inline-flex size-5 items-center justify-center rounded-full text-[10px] text-white" style={{ background: color }}>
+      <span aria-hidden className="inline-flex size-5 items-center justify-center rounded-full text-[12px] text-white" style={{ background: color }}>
         {name.slice(0, 1).toUpperCase()}
       </span>
       <span className="text-ink">{children ?? name}</span>

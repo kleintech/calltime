@@ -28,6 +28,9 @@ export function CopyButton({ value, label = "Copy link", share = false }: { valu
     >
       {copied ? <Check className="size-4" /> : canShare ? <Share2 className="size-4" /> : <Copy className="size-4" />}
       {copied ? "Copied" : label}
+      <span role="status" className="sr-only">
+        {copied ? "Copied to clipboard" : ""}
+      </span>
     </button>
   );
 }
