@@ -1,7 +1,19 @@
 import "server-only";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { creativeTeam, guardianships, invites, orgMembers, organizations, people, productions, users } from "@/db/schema";
+import {
+  changeAcks,
+  creativeTeam,
+  eventChanges,
+  events,
+  guardianships,
+  invites,
+  orgMembers,
+  organizations,
+  people,
+  productions,
+  users,
+} from "@/db/schema";
 import { hashPassword, normalizeEmail, randomToken } from "@/lib/auth";
 import { currentRoles } from "@/app/(app)/org/_lib/org";
 
@@ -102,25 +114,37 @@ export async function acceptInvite(
       }
     }
 
+    // People this account already covered in the org, so only what this invite adds gets pre-acked below.
+    const coveredBefore = await coveredPeopleInOrg(tx, invite.orgId, userId);
+
     /* 4. Become this person — only the record the invite names explicitly, only if unclaimed, and only
      *    if its email still matches the invite (createInvite enforces this at creation too). */
+    let claimed: typeof people.$inferSelect | undefined;
     if (invite.personId) {
       const person = await tx.query.people.findFirst({
         where: and(eq(people.id, invite.personId), eq(people.orgId, invite.orgId), isNull(people.userId)),
       });
       if (person && (!person.email || normalizeEmail(person.email) === normalizeEmail(invite.email))) {
-        await tx.update(people).set({ userId }).where(and(eq(people.id, person.id), isNull(people.userId)));
+        const [row] = await tx
+          .update(people)
+          .set({ userId })
+          .where(and(eq(people.id, person.id), isNull(people.userId)))
+          .returning();
+        claimed = row;
       }
     }
 
-    /* 5. Guardian of a person: the user's OWN already-linked person in this org, else a fresh one.
-     *    Never adopt an existing record by email match — that would hand over its other guardianships. */
+    /* 5. Guardian of a person: the record step 4 just claimed (a guardian invite minted with personId
+     *    by guardianInviteGrant — the parent was already on file), else the user's OWN already-linked
+     *    person in this org, else a fresh one. Never adopt an existing record by email match here —
+     *    that would hand over its other guardianships to whoever holds the link. */
     if (invite.guardianOfPersonId) {
       const minor = await tx.query.people.findFirst({
         where: and(eq(people.id, invite.guardianOfPersonId), eq(people.orgId, invite.orgId)),
       });
       if (minor) {
-        let self = await tx.query.people.findFirst({ where: and(eq(people.orgId, invite.orgId), eq(people.userId, userId)) });
+        let self =
+          claimed ?? (await tx.query.people.findFirst({ where: and(eq(people.orgId, invite.orgId), eq(people.userId, userId)) }));
         if (!self) {
           const [first, ...rest] = user.name.trim().split(/\s+/);
           [self] = await tx
@@ -134,8 +158,56 @@ export async function acceptInvite(
       }
     }
 
+    /* 6. Changes recorded before this account covered these people aren't news to it: a new guardian's
+     *    first screen shouldn't open on "1 change to check" about a rehearsal moved last month. Mark
+     *    every change affecting the people this invite newly covers (on events still to come) as seen,
+     *    without touching acks for people the account already covered. */
+    const gained = [...(await coveredPeopleInOrg(tx, invite.orgId, userId))].filter((id) => !coveredBefore.has(id));
+    if (gained.length) await ackEarlierChanges(tx, userId, gained);
+
     return { userId, invite };
   });
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The user's own person records in the org plus their wards (same shape as getCoveredPersonIds, in a transaction). */
+async function coveredPeopleInOrg(tx: Tx, orgId: string, userId: string) {
+  const own = (await tx.select({ id: people.id }).from(people).where(and(eq(people.orgId, orgId), eq(people.userId, userId)))).map(
+    (p) => p.id,
+  );
+  if (own.length === 0) return new Set<string>();
+  const wards = await tx.select({ id: guardianships.minorId }).from(guardianships).where(inArray(guardianships.guardianId, own));
+  return new Set([...own, ...wards.map((w) => w.id)]);
+}
+
+/**
+ * Acknowledge, for `userId`, the latest change revision of every event (not yet ended) whose changes
+ * affected any of `personIds`. Same upsert shape as `acknowledge` in src/lib/changes.ts: never moves
+ * an existing ack backwards.
+ */
+async function ackEarlierChanges(tx: Tx, userId: string, personIds: string[]) {
+  const latest = await tx
+    .select({ eventId: eventChanges.eventId, revision: sql<number>`max(${eventChanges.revision})`.mapWith(Number) })
+    .from(eventChanges)
+    .innerJoin(events, eq(events.id, eventChanges.eventId))
+    .where(
+      and(
+        sql`${eventChanges.affectedPersonIds} ?| array[${sql.join(personIds.map((id) => sql`${id}`), sql`, `)}]::text[]`,
+        gt(events.endsAt, new Date()),
+      ),
+    )
+    .groupBy(eventChanges.eventId);
+  if (latest.length === 0) return;
+  const now = new Date();
+  await tx
+    .insert(changeAcks)
+    .values(latest.map((l) => ({ userId, eventId: l.eventId, revision: l.revision, ackedAt: now })))
+    .onConflictDoUpdate({
+      target: [changeAcks.userId, changeAcks.eventId],
+      set: { revision: sql`excluded.revision`, ackedAt: now },
+      setWhere: sql`${changeAcks.revision} < excluded.revision`,
+    });
 }
 
 /** Where to land after accepting: staff go to their production / company, families to their calls. */

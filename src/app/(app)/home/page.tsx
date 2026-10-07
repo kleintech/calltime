@@ -1,21 +1,25 @@
 import { and, asc, count, desc, eq, gte, inArray, lt, min, ne, or } from "drizzle-orm";
-import { Ban, CalendarClock, FolderOpen, HandHeart, Megaphone, NotebookPen, CalendarPlus, Check, ChevronRight, ExternalLink, MapPin, RefreshCw, StickyNote, TriangleAlert } from "lucide-react";
+import { Ban, CalendarClock, FolderOpen, HandHeart, Megaphone, NotebookPen, CalendarPlus, Check, ChevronRight, ExternalLink, MapPin, Quote, RefreshCw, StickyNote, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
-import { announcements, changeAcks, eventBlocks, eventChanges, events, organizations } from "@/db/schema";
+import { announcements, changeAcks, conflicts, eventBlocks, eventChanges, events, organizations } from "@/db/schema";
 import { Badge, CallTime, Card, Chip, cn, EmptyState, LinkButton, Ticket } from "@/components/ui";
 import { getCoveredPersonIds, getUserProductions } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { getCallsForPeople, type PersonCall } from "@/lib/calls";
-import { getUnacknowledgedChanges } from "@/lib/changes";
+import { cancelReason, getUnacknowledgedChanges } from "@/lib/changes";
 import { getUnreadNoteCount } from "@/lib/notes";
-import { addLocalDays, KIND_META, mapsUrl, personColor } from "@/lib/schedule-shared";
+import { addLocalDays, KIND_META, mapsUrl, overlaps, personColor } from "@/lib/schedule-shared";
 import { dayKey, fmtDay, fmtDayLong, fmtRange, fmtTime, toDateInput, toTimeInput } from "@/lib/time";
 import { weekKey } from "@/lib/schedule-shared";
 import { GotItButton } from "./_components/got-it";
 import { KindIcon, PersonChip, StatusBadges } from "../p/[productionId]/schedule/_components/bits";
 
-type EventGroup = { key: string; tz: string; calls: PersonCall[] };
+/** An absence the family reported ("Can't make it") that overlaps this person's call. */
+type Absence = { note: string | null; self: boolean };
+type EventGroup = { key: string; tz: string; calls: PersonCall[]; absences: Map<string, Absence> };
+
+const absenceLine = (name: string, a: Absence) => `You told the team ${a.self ? "you" : name} can't make it${a.note ? ` · ${a.note}` : ""}`;
 
 const listNames = (names: string[]) =>
   names.length > 1 ? `${names.slice(0, -1).join(", ")} & ${names.at(-1)}` : (names[0] ?? "");
@@ -46,11 +50,28 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
   const calls = filter ? allCalls.filter((c) => c.person.id === filter) : allCalls;
   const multiProduction = new Set(allCalls.map((c) => c.production.id)).size > 1;
 
+  // Absences the family already reported, so a call they said they can't make says so (never hidden).
+  const conflictRows = covered.length
+    ? await db
+        .select()
+        .from(conflicts)
+        .where(and(inArray(conflicts.personId, covered), gte(conflicts.endsAt, now)))
+        .orderBy(asc(conflicts.startsAt))
+    : [];
+  const absenceFor = (c: PersonCall): Absence | null => {
+    const k = conflictRows.find(
+      (r) => r.personId === c.person.id && (!r.productionId || r.productionId === c.production.id) && overlaps(c.callAt, c.releaseAt, r.startsAt, r.endsAt),
+    );
+    return k ? { note: k.note?.trim() || null, self: c.person.userId === user.id } : null;
+  };
+
   // One card per event (a parent with two kids in one rehearsal sees one card, two rows)
   const byEvent = new Map<string, EventGroup>();
   for (const c of calls) {
-    const g = byEvent.get(c.event.id) ?? { key: c.event.id, tz: tzOf(c.production.orgId), calls: [] };
+    const g = byEvent.get(c.event.id) ?? { key: c.event.id, tz: tzOf(c.production.orgId), calls: [], absences: new Map<string, Absence>() };
     g.calls.push(c);
+    const a = absenceFor(c);
+    if (a) g.absences.set(c.person.id, a);
     byEvent.set(c.event.id, g);
   }
   const startOf = (g: EventGroup) => Math.min(...g.calls.map((c) => c.callAt.getTime()));
@@ -83,7 +104,20 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
     return u ? u.changes.at(-1)!.createdAt : null;
   };
   // Built from the change list (not current calls) so someone dropped from an event still hears about it.
-  type Alert = { eventId: string; productionId: string; title: string; at: Date; tz: string; cancelled: boolean; removed: boolean; who: string[]; lines: string[]; revision: number };
+  type Alert = {
+    eventId: string;
+    productionId: string;
+    title: string;
+    at: Date;
+    tz: string;
+    cancelled: boolean;
+    removed: boolean;
+    who: string[];
+    lines: string[];
+    /** The team's own words about the change ("Tell families what changed"), if they wrote any. */
+    note: string | null;
+    revision: number;
+  };
   const alerts: Alert[] = [
     ...unackedList
       .filter((u) => !filter || u.people.includes(peopleById.get(filter)?.firstName ?? ""))
@@ -97,22 +131,27 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
         removed: u.event.status === "draft", // unpublished: families can't open it, so no link
         who: u.people,
         lines: u.changes.flatMap((c) => c.lines).slice(-4),
+        note: u.teamNote,
         revision: u.latestRevision,
       })),
     ...groups
       .filter((g) => legacyCancelled.has(g.key))
-      .map((g) => ({
-        eventId: g.key,
-        productionId: g.calls[0].production.id,
-        title: g.calls[0].event.title,
-        at: g.calls[0].callAt,
-        tz: g.tz,
-        cancelled: true,
-        removed: false,
-        who: g.calls.map((c) => c.person.firstName),
-        lines: [g.calls[0].event.changeNote ? `Cancelled — ${g.calls[0].event.changeNote}` : "Cancelled"],
-        revision: g.calls[0].event.revision,
-      })),
+      .map((g) => {
+        const reason = cancelReason(g.calls[0].event);
+        return {
+          eventId: g.key,
+          productionId: g.calls[0].production.id,
+          title: g.calls[0].event.title,
+          at: g.calls[0].callAt,
+          tz: g.tz,
+          cancelled: true,
+          removed: false,
+          who: g.calls.map((c) => c.person.firstName),
+          lines: [reason ? `Cancelled — ${reason}` : "Cancelled"],
+          note: null,
+          revision: g.calls[0].event.revision,
+        };
+      }),
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
 
   const relDay = (d: Date, tz: string) => {
@@ -240,6 +279,7 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
                             {t}
                           </span>
                         ))}
+                        {a.note ? <TeamNote note={a.note} className="mt-1" /> : null}
                       </span>
                     </>
                   );
@@ -269,6 +309,7 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
           now={now}
           changed={changedAt(next.key)}
           changes={unacked.get(next.key)?.changes.flatMap((c) => c.lines) ?? []}
+          note={unacked.get(next.key)?.teamNote ?? null}
           cancelledSameDay={groups.filter(
             (g) => g.calls[0].event.status === "cancelled" && dayKey(g.calls[0].callAt, g.tz) === dayKey(next.calls[0].callAt, next.tz),
           )}
@@ -327,7 +368,16 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
               <h3 className="mb-2 text-sm font-semibold text-muted">{d.label}</h3>
               <div className="space-y-2">
                 {d.groups.map((g) => (
-                  <CallCard key={g.key} group={g} multi={multi} showProduction={multiProduction} now={now} changed={changedAt(g.key)} changes={unacked.get(g.key)?.changes.flatMap((c) => c.lines) ?? []} />
+                  <CallCard
+                    key={g.key}
+                    group={g}
+                    multi={multi}
+                    showProduction={multiProduction}
+                    now={now}
+                    changed={changedAt(g.key)}
+                    changes={unacked.get(g.key)?.changes.flatMap((c) => c.lines) ?? []}
+                    note={unacked.get(g.key)?.teamNote ?? null}
+                  />
                 ))}
                 {d.notCalled.map((e) => (
                   <Link
@@ -573,6 +623,28 @@ function FilterChip({ href, active, label, color }: { href: string; active: bool
   );
 }
 
+/** The team's own words about a change, quoted under the computed change lines. */
+function TeamNote({ note, className }: { note: string; className?: string }) {
+  return (
+    <span className={cn("flex items-start gap-1.5 text-sm text-ink/80", className)}>
+      <Quote className="mt-1 size-3.5 shrink-0 text-muted" aria-hidden />
+      <span>
+        From the team: <q>{note}</q>
+      </span>
+    </span>
+  );
+}
+
+/** "You told the team Maya can't make it · dentist" — quiet, under the call it overlaps. */
+function AbsenceLine({ name, absence, className }: { name: string; absence: Absence; className?: string }) {
+  return (
+    <p className={cn("flex items-start gap-1.5 text-sm text-muted", className)}>
+      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <span>{absenceLine(name, absence)}</span>
+    </p>
+  );
+}
+
 /** Event location plus any block rooms this person is in ("Riverside Hall · Room A"). */
 function whereLabel(group: EventGroup) {
   const ev = group.calls[0].event;
@@ -607,6 +679,7 @@ function HeroCard({
   cancelledSameDay,
   changed,
   changes,
+  note,
 }: {
   group: EventGroup;
   label: string;
@@ -615,6 +688,8 @@ function HeroCard({
   cancelledSameDay: EventGroup[];
   changed: Date | null;
   changes: string[];
+  /** The team's own words about the change, when they wrote any. */
+  note: string | null;
 }) {
   const { tz } = group;
   const first = group.calls[0];
@@ -624,6 +699,7 @@ function HeroCard({
   const href = `/p/${first.production.id}/schedule/${ev.id}`;
   const soon = startsIn(first.callAt, now);
   const pickups = group.calls.length > 1 ? group.calls.map((c) => `${c.person.firstName} ${fmtTime(c.releaseAt, tz)}`).join(" · ") : null;
+  const reported = group.absences.size > 0;
   return (
     <Ticket
       accent={accent}
@@ -646,7 +722,7 @@ function HeroCard({
               Details
             </LinkButton>
             <LinkButton href={conflictHref(first, tz)} variant="ghost" className="flex-1 text-muted">
-              Can&apos;t make it
+              {reported ? "Update" : "Can't make it"}
             </LinkButton>
           </div>
         </div>
@@ -682,6 +758,7 @@ function HeroCard({
               {multi || group.calls.length > 1 ? <PersonChip name={c.person.firstName} className="mb-1.5" /> : null}
               <CallTime size={group.calls.length > 1 ? "lg" : "xl"}>{fmtRange(c.callAt, c.releaseAt, tz)}</CallTime>
               <p className="mt-1 text-base">{c.reasons.join(", ")}</p>
+              {group.absences.has(c.person.id) ? <AbsenceLine name={c.person.firstName} absence={group.absences.get(c.person.id)!} className="mt-1" /> : null}
             </div>
           ))}
         </div>
@@ -703,6 +780,7 @@ function HeroCard({
             <RefreshCw className="mt-0.5 size-4 shrink-0 text-gold" />
             <span>
               <strong>Changed {fmtDay(changed, tz)}:</strong> {changes.join("; ")}
+              {note ? <TeamNote note={note} className="mt-1" /> : null}
             </span>
           </p>
         ) : null}
@@ -724,6 +802,7 @@ function CallCard({
   now,
   changed,
   changes,
+  note,
 }: {
   group: EventGroup;
   multi: boolean;
@@ -731,11 +810,14 @@ function CallCard({
   now: Date;
   changed: Date | null;
   changes: string[];
+  /** The team's own words about the change, when they wrote any. */
+  note: string | null;
 }) {
   const { tz } = group;
   const first = group.calls[0];
   const ev = first.event;
   const cancelled = ev.status === "cancelled";
+  const reason = cancelReason(ev);
   const where = whereLabel(group);
   return (
     <Link
@@ -771,10 +853,12 @@ function CallCard({
                 </span>
               </div>
               <p className={cn("text-sm", cancelled && "text-muted")}>{c.reasons.join(", ")}</p>
+              {!cancelled && group.absences.has(c.person.id) ? <AbsenceLine name={c.person.firstName} absence={group.absences.get(c.person.id)!} className="mt-0.5" /> : null}
             </div>
           ))}
         </div>
-        {changes.length ? <p className="mt-1 text-sm text-muted">{changes.at(-1)}</p> : cancelled && ev.changeNote ? <p className="mt-1 text-sm text-muted">{ev.changeNote}</p> : null}
+        {changes.length ? <p className="mt-1 text-sm text-muted">{changes.at(-1)}</p> : cancelled && reason ? <p className="mt-1 text-sm text-muted">{reason}</p> : null}
+        {note ? <TeamNote note={note} className="mt-1" /> : null}
         {where ? (
           <p className="mt-1 flex items-center gap-1 text-sm text-muted">
             <MapPin className="size-3.5 shrink-0" /> <span className="truncate">{where}</span>

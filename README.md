@@ -74,6 +74,7 @@ claude mcp add --transport http calltime https://<host>/api/mcp --header "Author
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | Neon Postgres (provisioned by the Vercel Neon integration) |
+| `APP_URL` | Public base URL (e.g. `https://calltime.app`) used in invite, reset and calendar links; set it in production so a spoofed `Host` header can't mint links to another domain |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web push; push is skipped if unset |
 | `DEMO_MODE=1` | Shows one-tap demo sign-in for the seeded demo accounts in production |
 | `RESEND_API_KEY`, `RESEND_FROM` | Optional: email the weekly change digest (preview at `/api/digest/preview`) |

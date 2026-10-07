@@ -74,7 +74,7 @@ export async function updateScene(productionId: string, sceneId: string, _: Form
       ({ affected } = await mutateCalls(productionId, user.id, async (tx) => {
         await tx.delete(sceneRoles).where(eq(sceneRoles.sceneId, sceneId));
         if (ids.length) await tx.insert(sceneRoles).values(ids.map((roleId) => ({ sceneId, roleId })));
-      }));
+      }, { scenes: [sceneId] }));
     }
     revalidate(productionId);
     return { message: `Saved.${impactNote(affected)}` };
@@ -87,7 +87,7 @@ export async function deleteScene(productionId: string, sceneId: string) {
   await mutateCalls(productionId, user.id, async (tx) => {
     await tx.delete(scenes).where(and(eq(scenes.id, sceneId), eq(scenes.productionId, productionId)));
     await deleteCallsTargeting("scene", sceneId, tx);
-  });
+  }, { scenes: [sceneId] });
   revalidate(productionId);
   redirect(`/p/${productionId}/scenes`);
 }

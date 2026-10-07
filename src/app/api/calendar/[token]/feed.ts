@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { creativeTeam, events, orgMembers, organizations, people, productions, roleAssignments, users } from "@/db/schema";
 import { getCoveredPersonIds } from "@/lib/access";
 import { buildCallSheets, getCallsForPeople, loadCastIndex, type BlockWithCalls } from "@/lib/calls";
+import { cancelReason } from "@/lib/changes";
 import { buildCalendar, type IcsEvent } from "@/lib/ics";
 import { fmtRange } from "@/lib/time";
 
@@ -94,7 +95,11 @@ export async function buildUserFeed(user: User, baseUrl: string): Promise<string
     // Many calendar apps hide STATUS:CANCELLED, so say it in the title too.
     const summary = `${cancelled ? "CANCELLED: " : ""}${prefix}${eventName(c.production.title, c.event)} (called ${fmtRange(c.callAt, c.releaseAt, tz)})`;
     const desc: string[] = [];
-    if (cancelled) desc.push("This call has been cancelled.", "");
+    if (cancelled) {
+      // The team's reason lives in events.changeNote (cancel flows); say it where the parent will read it.
+      const reason = cancelReason(c.event);
+      desc.push(reason ? `This call has been cancelled — ${reason}.` : "This call has been cancelled.", "");
+    }
     desc.push(`${c.person.firstName} is called ${fmtRange(c.callAt, c.releaseAt, tz)}.`);
     // calls.ts labels person-targeted calls "Individual"; say it in family words.
     const reasons = c.reasons.map(familyLabel);
@@ -140,7 +145,10 @@ export async function buildUserFeed(user: User, baseUrl: string): Promise<string
     for (const { event, blocks, calls: sheetCalls } of sheets) {
       const cancelled = event.status === "cancelled";
       const desc: string[] = [];
-      if (cancelled) desc.push("This event has been cancelled.", "");
+      if (cancelled) {
+        const reason = cancelReason(event);
+        desc.push(reason ? `This event has been cancelled — ${reason}.` : "This event has been cancelled.", "");
+      }
       desc.push(`${sheetCalls.size} ${sheetCalls.size === 1 ? "person" : "people"} called.`);
       if (blocks.length) {
         desc.push("", "Schedule:");

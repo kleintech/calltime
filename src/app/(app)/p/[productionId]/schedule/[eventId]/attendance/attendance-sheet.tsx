@@ -19,7 +19,7 @@ export type AttendancePerson = {
   reasons: string[];
   status: Status | null;
   note: string | null;
-  /** Overlapping conflict they reported (shown as a hint; auto-excused only on first open). */
+  /** Overlapping conflict they reported (shown as a hint once the auto-excuse has been applied or cleared). */
   conflict: string | null;
   checkedInAt: string | null;
   checkedOutAt: string | null;

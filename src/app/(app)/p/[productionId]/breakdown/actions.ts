@@ -34,7 +34,7 @@ export async function applyBreakdownChanges(
         if (c.on) await tx.insert(sceneRoles).values({ sceneId: c.sceneId, roleId: c.roleId }).onConflictDoNothing();
         else await tx.delete(sceneRoles).where(and(eq(sceneRoles.sceneId, c.sceneId), eq(sceneRoles.roleId, c.roleId)));
       }
-    });
+    }, { scenes: [...new Set(changes.map((c) => c.sceneId))] });
     revalidatePath(`/p/${productionId}`, "layout");
     return { ok: true, affected };
   } catch (e) {

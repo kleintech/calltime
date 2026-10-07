@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, gt, inArray, lt, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/db";
 import { authFailures } from "@/db/schema";
@@ -38,8 +38,18 @@ export async function checkLoginRateLimit(email: string): Promise<string | null>
 export async function recordLoginFailure(email: string) {
   const k = keysFor(email, await clientIp());
   await db.insert(authFailures).values([{ key: k.email }, { key: k.ip }]);
-  // Opportunistic cleanup (~1 in 20 failures).
-  if (Math.random() < 0.05) await db.delete(authFailures).where(lt(authFailures.createdAt, new Date(Date.now() - 86400_000)));
+  await sweepOld([k.email, k.ip]);
+}
+
+/**
+ * Drop rows older than a day. Always for the given keys (uses the (key, created_at) index, so it's
+ * one cheap delete); ~1 in 5 calls also sweep every key, since there's no index on created_at
+ * alone and keys nobody hits again would otherwise linger.
+ */
+async function sweepOld(keys: string[]) {
+  const cutoff = new Date(Date.now() - 86400_000);
+  await db.delete(authFailures).where(and(inArray(authFailures.key, keys), lt(authFailures.createdAt, cutoff)));
+  if (Math.random() < 0.2) await db.delete(authFailures).where(lt(authFailures.createdAt, cutoff));
 }
 
 /**
@@ -61,7 +71,13 @@ export async function takeRateLimit(limits: { key: string; max: number }[], mess
   return null;
 }
 
-/** A successful sign-in clears that email's failures (not the IP's). */
+/**
+ * A successful sign-in clears that email's failures and this IP's: someone who finally types the
+ * right password after a few typos shouldn't stay locked out for 15 minutes by the IP counter
+ * (a shared school or venue network trips it quickly). The per-email lockout still has to clear
+ * on its own for every other account, so a guesser can't reset those with one known password.
+ */
 export async function clearLoginFailures(email: string) {
-  await db.delete(authFailures).where(eq(authFailures.key, keysFor(email, "").email));
+  const k = keysFor(email, await clientIp());
+  await db.delete(authFailures).where(inArray(authFailures.key, [k.email, k.ip]));
 }

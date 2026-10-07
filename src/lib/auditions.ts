@@ -340,8 +340,11 @@ export async function castSignup(opts: {
       let g: typeof people.$inferSelect | undefined;
       if (gEmail) {
         // Reuse only an adult with this email. Kids often carry a parent's email, so a minor is never
-        // picked as the guardian. With a guardian name, the person's name must match it; without one,
-        // only someone who is already a guardian is reused. Otherwise a new guardian person is created.
+        // picked as the guardian. An adult with this email who is already someone's guardian is the
+        // parent even when the typed name differs ("Liz" vs "Elizabeth", a remarried surname) — same
+        // email + already a guardian is strong enough, and a name-only match would create a duplicate
+        // parent. Failing that, with a guardian name the person's name must match it; without one,
+        // only an existing guardian is reused. Otherwise a new guardian person is created.
         const candidates = await tx
           .select({ p: people, isGuardian: sql<boolean>`exists (select 1 from ${guardianships} where ${guardianships.guardianId} = ${people.id})` })
           .from(people)
@@ -349,10 +352,9 @@ export async function castSignup(opts: {
             and(eq(people.orgId, orgId), sql`lower(${people.email}) = ${gEmail}`, ne(people.id, person.id), eq(people.isMinor, false)),
           );
         const norm = (v: string) => v.toLowerCase().replace(/\s+/g, " ").trim();
-        const named = gName
-          ? candidates.filter((c) => norm(`${c.p.firstName} ${c.p.lastName}`) === norm(gName))
-          : candidates.filter((c) => c.isGuardian);
-        g = (named.find((c) => c.isGuardian) ?? named[0])?.p;
+        const nameMatches = (c: (typeof candidates)[number]) => !!gName && norm(`${c.p.firstName} ${c.p.lastName}`) === norm(gName);
+        const guardians = candidates.filter((c) => c.isGuardian);
+        g = (guardians.find(nameMatches) ?? guardians[0] ?? candidates.find(nameMatches))?.p;
       }
       let created = false;
       if (!g) {

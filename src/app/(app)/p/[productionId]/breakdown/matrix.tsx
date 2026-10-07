@@ -38,7 +38,7 @@ export function BreakdownMatrix({
 
   // Taps update the grid instantly; saves are batched (debounced) so a burst of taps becomes one
   // transaction and families get one change per affected rehearsal, not one per tap.
-  const saved = useRef(new Set(initial)); // what the server has
+  const saved = useRef(new Set(initial)); // what the server has (updated as each batch resolves)
   const pending = useRef(new Map<string, boolean>()); // key → desired state, not yet sent
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<void>>(Promise.resolve());
@@ -48,50 +48,71 @@ export function BreakdownMatrix({
   const flush = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-    const batch = [...pending.current].filter(([k, on]) => saved.current.has(k) !== on);
-    pending.current.clear();
-    if (!batch.length) return;
+    if (!pending.current.size) return;
     setSaving(true);
+    // Sends are serialized, and each batch is built only when its turn comes — i.e. once the previous
+    // request has resolved and `saved` reflects what the server really holds. Building it at flush
+    // time would compare a re-toggle made during an in-flight save against stale state and drop it
+    // (on → sent off → tapped on again → "already on", so the server stays off while the grid says on).
     inFlight.current = inFlight.current.then(async () => {
-      let failed: string | null = null;
-      try {
-        const res = await applyBreakdownChanges(
-          productionId,
-          batch.map(([k, on]) => {
-            const [sceneId, roleId] = k.split(":");
-            return { sceneId, roleId, on };
-          }),
-        );
-        if (res.ok) {
-          for (const [k, on] of batch) {
-            if (on) saved.current.add(k);
-            else saved.current.delete(k);
-          }
-          if (res.affected)
-            setNotice(`Calls updated for ${res.affected} ${res.affected === 1 ? "person" : "people"} at upcoming rehearsals; their families were notified.`);
-        } else failed = res.error;
-      } catch {
-        failed = "Couldn't save those changes. Check your connection and try again.";
-      }
-      if (failed) {
-        setError(failed);
-        // Roll the failed cells back to what the server has (unless re-toggled since).
-        setCells((prev) => {
-          const next = new Set(prev);
-          for (const [k] of batch) {
-            if (pending.current.has(k)) continue;
-            if (saved.current.has(k)) next.add(k);
-            else next.delete(k);
-          }
-          return next;
-        });
+      const batch = [...pending.current].filter(([k, on]) => saved.current.has(k) !== on);
+      pending.current.clear();
+      if (batch.length) {
+        let failed: string | null = null;
+        try {
+          const res = await applyBreakdownChanges(
+            productionId,
+            batch.map(([k, on]) => {
+              const [sceneId, roleId] = k.split(":");
+              return { sceneId, roleId, on };
+            }),
+          );
+          if (res.ok) {
+            for (const [k, on] of batch) {
+              if (on) saved.current.add(k);
+              else saved.current.delete(k);
+            }
+            if (res.affected)
+              setNotice(`Calls updated for ${res.affected} ${res.affected === 1 ? "person" : "people"} at upcoming rehearsals; their families were notified.`);
+          } else failed = res.error;
+        } catch {
+          failed = "Couldn't save those changes. Check your connection and try again.";
+        }
+        if (failed) {
+          setError(failed);
+          // Roll the failed cells back to what the server has (unless re-toggled since).
+          setCells((prev) => {
+            const next = new Set(prev);
+            for (const [k] of batch) {
+              if (pending.current.has(k)) continue;
+              if (saved.current.has(k)) next.add(k);
+              else next.delete(k);
+            }
+            return next;
+          });
+        }
       }
       if (!pending.current.size) setSaving(false);
     });
   }, [productionId]);
 
-  // Save anything still queued when leaving the page.
-  useEffect(() => () => flush(), [flush]);
+  // Save anything still queued when leaving the page. React unmount alone isn't enough: closing the
+  // tab or backgrounding it on a phone within the debounce never unmounts, so also flush when the
+  // page is hidden (visibilitychange fires before pagehide/unload and is the reliable one on mobile).
+  // A request started during unload can still be cancelled by the browser; this narrows the window.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    const onPageHide = () => flush();
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+      flush();
+    };
+  }, [flush]);
 
   const toggle = (sceneId: string, roleId: string) => {
     const k = key(sceneId, roleId);

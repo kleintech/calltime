@@ -136,6 +136,7 @@ export async function assignRole(productionId: string, _: FormState, fd: FormDat
         .insert(roleAssignments)
         .values({ roleId: role.id, personId, kind: base.kind })
         .onConflictDoUpdate({ target: [roleAssignments.roleId, roleAssignments.personId], set: { kind: base.kind } }),
+      { roles: [role.id], people: [personId] },
     );
     revalidate(productionId);
     return {
@@ -154,6 +155,7 @@ export async function setAssignmentKind(productionId: string, roleId: string, pe
       .update(roleAssignments)
       .set({ kind })
       .where(and(eq(roleAssignments.roleId, roleId), eq(roleAssignments.personId, personId))),
+    { roles: [roleId], people: [personId] },
   );
   revalidate(productionId);
 }
@@ -164,7 +166,7 @@ export async function removeAssignment(productionId: string, roleId: string, per
   await mutateCalls(productionId, user.id, async (tx) => {
     await tx.delete(roleAssignments).where(and(eq(roleAssignments.roleId, roleId), eq(roleAssignments.personId, personId)));
     await dropPersonCallsIfUncast(tx, productionId, personId);
-  });
+  }, { roles: [roleId], people: [personId] });
   revalidate(productionId);
 }
 
@@ -180,6 +182,7 @@ export async function addRoleToPerson(productionId: string, personId: string, _:
         .insert(roleAssignments)
         .values({ roleId: role.id, personId: person.id, kind })
         .onConflictDoUpdate({ target: [roleAssignments.roleId, roleAssignments.personId], set: { kind } }),
+      { roles: [role.id], people: [person.id] },
     );
     revalidate(productionId);
     return { message: `Added ${role.name}.${impactNote(affected)}` };

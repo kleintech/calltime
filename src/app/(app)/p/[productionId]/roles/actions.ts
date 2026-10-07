@@ -78,7 +78,7 @@ export async function deleteRole(productionId: string, roleId: string) {
   await mutateCalls(productionId, user.id, async (tx) => {
     await tx.delete(roles).where(and(eq(roles.id, roleId), eq(roles.productionId, productionId)));
     await deleteCallsTargeting("role", roleId, tx);
-  });
+  }, { roles: [roleId] });
   revalidate(productionId);
   redirect(`/p/${productionId}/roles`);
 }
@@ -126,7 +126,7 @@ export async function updateGroup(productionId: string, groupId: string, _: Form
     const { affected } = await mutateCalls(productionId, user.id, async (tx) => {
       await tx.delete(roleGroupMembers).where(eq(roleGroupMembers.groupId, groupId));
       if (ids.length) await tx.insert(roleGroupMembers).values(ids.map((roleId) => ({ groupId, roleId })));
-    });
+    }, { groups: [groupId] });
     revalidate(productionId);
     return { message: `Saved.${impactNote(affected)}` };
   });
@@ -138,7 +138,7 @@ export async function deleteGroup(productionId: string, groupId: string) {
   await mutateCalls(productionId, user.id, async (tx) => {
     await tx.delete(roleGroups).where(and(eq(roleGroups.id, groupId), eq(roleGroups.productionId, productionId)));
     await deleteCallsTargeting("group", groupId, tx);
-  });
+  }, { groups: [groupId] });
   revalidate(productionId);
   redirect(`/p/${productionId}/roles`);
 }

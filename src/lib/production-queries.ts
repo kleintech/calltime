@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "@/db";
-import { scheduleChangeNotification, withCallImpact } from "@/lib/changes";
+import { scheduleChangeNotification, withCallImpact, type TouchedTargets } from "@/lib/changes";
 import {
   blockCalls,
   eventBlocks,
@@ -342,8 +342,8 @@ type ImpactTx = Parameters<Parameters<typeof withCallImpact>[3]>[0];
  * after commit. Everything inside `fn` must use the `tx` it receives. Returns how many people's
  * calls changed so the UI can say so.
  */
-export async function mutateCalls<T>(productionId: string, userId: string, fn: (tx: ImpactTx) => Promise<T>) {
-  const { result, changes } = await db.transaction((tx) => withCallImpact(tx, productionId, userId, fn));
+export async function mutateCalls<T>(productionId: string, userId: string, fn: (tx: ImpactTx) => Promise<T>, touched?: TouchedTargets) {
+  const { result, changes } = await db.transaction((tx) => withCallImpact(tx, productionId, userId, fn, touched));
   for (const c of changes) scheduleChangeNotification(c);
   const affected = new Set(changes.flatMap((c) => c.affectedPersonIds)).size;
   return { result, changes, affected };

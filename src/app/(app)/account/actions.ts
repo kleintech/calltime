@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { guardianships, people, users } from "@/db/schema";
 import { hashPassword, normalizeEmail, requireUser, revokeOtherSessions, verifyPassword } from "@/lib/auth";
 import { demoRestriction } from "@/lib/demo";
-import { createInvite } from "@/lib/invites";
+import { createInvite, guardianInviteGrant } from "@/lib/invites";
 import { firstIssue, type FormState } from "../org/_components/form-state";
 import { messageForInvite } from "../org/_lib/org";
 
@@ -75,12 +75,14 @@ export async function inviteCoGuardian(_: FormState, fd: FormData): Promise<Form
   if (parsed.data.email === user.email) return { error: "That's your own email — use theirs." };
   const restricted = demoRestriction(user.email, "send invites");
   if (restricted) return { error: restricted };
+  // If the other parent is already on file unlinked under this email, claim that record instead of
+  // creating a second one (guardianInviteGrant); a parent isn't staff, so this only applies when the
+  // claim check allows it and otherwise falls back to the plain guardian invite.
+  const base = { orgId: link.minor.orgId, email: parsed.data.email, guardianOfPersonId: link.minor.id, invitedByUserId: user.id };
   const { invite, url } = await createInvite({
-    orgId: link.minor.orgId,
-    email: parsed.data.email,
+    ...base,
+    ...(await guardianInviteGrant(base)),
     name: parsed.data.name || null,
-    guardianOfPersonId: link.minor.id,
-    invitedByUserId: user.id,
   });
   return { ok: `Invite for ${parsed.data.name || parsed.data.email}`, link: url, message: await messageForInvite(invite, url) };
 }

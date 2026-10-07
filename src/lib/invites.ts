@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/db";
 import { creativeTeam, guardianships, invites, orgMembers, people, roleAssignments, roles, users } from "@/db/schema";
@@ -70,6 +70,62 @@ async function assertMayClaimPerson(grant: InviteGrant & { personId: string }) {
   if (!castIn.every((c) => editableIds.has(c.productionId))) {
     throw new ActionError(`${person.firstName} is also in a production you don't manage, so only a company admin can send this invite.`);
   }
+}
+
+/**
+ * Guardian invites (guardianOfPersonId) for a parent we already have on file. Accepting a plain
+ * guardian invite creates a fresh person for the account, so if the parent is already an unlinked
+ * person in the org (entered with the kid, or already a guardian of a sibling) a second parent row
+ * appears: the family's calls split across two records, call sheets list them twice, imports naming
+ * them fail as ambiguous. Instead, mint the invite with `personId` too, so acceptance claims that
+ * record (step 4) and then adds the new guardianship to it (step 5).
+ *
+ * Which record qualifies — all of:
+ *  - an unlinked (no account), non-minor person in `orgId` whose email is exactly the invite email;
+ *  - already a guardian of someone: of the minor itself preferred, else of anyone in the org (the
+ *    sibling case — the minor may have no guardians on file yet, so "shares a guardian with the
+ *    minor" can't be used); an adult who merely shares the email is left alone;
+ *  - exactly one such record in the chosen tier (two parent rows with the same email are a data
+ *    problem for an admin to merge, not for an invite to guess at).
+ * Claiming a record is gated by assertMayClaimPerson (org admin, or editor of every production the
+ * record and its wards are in). Where the inviter fails that check — an editor who only manages one
+ * of the family's shows, or a co-guardian inviting from their account — fall back to the plain
+ * guardian invite rather than failing, so the invite still goes out.
+ *
+ * Never adopt a record by email at accept time: that would let any link holder take over whatever
+ * record carries the invite email, including its other guardianships.
+ */
+export async function guardianInviteGrant(
+  grant: Pick<InviteGrant, "orgId" | "email" | "invitedByUserId"> & { guardianOfPersonId: string },
+): Promise<{ personId?: string }> {
+  const email = normalizeEmail(grant.email);
+  if (!email) return {};
+  const candidates = await db
+    .select({
+      id: people.id,
+      ofMinor: sql<boolean>`exists (select 1 from ${guardianships} where ${guardianships.guardianId} = ${people.id} and ${guardianships.minorId} = ${grant.guardianOfPersonId})`,
+      ofAnyone: sql<boolean>`exists (select 1 from ${guardianships} where ${guardianships.guardianId} = ${people.id})`,
+    })
+    .from(people)
+    .where(
+      and(
+        eq(people.orgId, grant.orgId),
+        isNull(people.userId),
+        eq(people.isMinor, false),
+        ne(people.id, grant.guardianOfPersonId),
+        sql`lower(${people.email}) = ${email}`,
+      ),
+    );
+  const tier = [candidates.filter((c) => c.ofMinor), candidates.filter((c) => c.ofAnyone)].find((t) => t.length > 0);
+  if (!tier || tier.length !== 1) return {};
+  const personId = tier[0].id;
+  try {
+    await assertMayClaimPerson({ ...grant, email, personId });
+  } catch (e) {
+    if (e instanceof ActionError) return {};
+    throw e;
+  }
+  return { personId };
 }
 
 export async function createInvite(grant: InviteGrant) {

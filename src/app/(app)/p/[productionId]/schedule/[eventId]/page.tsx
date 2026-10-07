@@ -1,5 +1,5 @@
 import { inArray } from "drizzle-orm";
-import { ClipboardCheck, Clock, Eye, RefreshCw, Ellipsis, ExternalLink, Mail, MapPin, Pencil, Phone, RotateCcw, Send, StickyNote, Trash, TriangleAlert, Undo2, Users } from "lucide-react";
+import { ClipboardCheck, Clock, Eye, RefreshCw, Ellipsis, ExternalLink, Mail, MapPin, Pencil, Phone, Quote, RotateCcw, Send, StickyNote, Trash, TriangleAlert, Undo2, Users } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
@@ -7,7 +7,7 @@ import { people } from "@/db/schema";
 import { Avatar, BackLink, Badge, CallTime, Card, cn, LinkButton, Menu, Notice, SectionTitle, TimePill } from "@/components/ui";
 import { getCoveredPersonIds, requireProductionAccess } from "@/lib/access";
 import { getEventCallSheet } from "@/lib/calls";
-import { getAckStatus, getUnacknowledgedChanges } from "@/lib/changes";
+import { cancelReason, getAckStatus, getTeamNoteForEvent, getUnacknowledgedChanges } from "@/lib/changes";
 import { getConflictsFor, getGuardianContacts } from "@/lib/schedule";
 import { KIND_META, mapsUrl, overlaps, personName, recentChange } from "@/lib/schedule-shared";
 import { dayKey, fmtDay, fmtDayLong, fmtRange, fmtTime, toDateInput, toTimeInput } from "@/lib/time";
@@ -56,12 +56,17 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
     canEdit ? getAckStatus(eventId) : Promise.resolve(null),
   ]);
   const myUnacked = unackedAll.find((u) => u.event.id === ev.id) ?? null;
+  // The team's "Tell families what changed" note. Families see it with their unacknowledged change,
+  // or (once they've said Got it) in the Changed notice for as long as the badge shows.
+  const familyNote = !canEdit && changed && !myUnacked ? await getTeamNoteForEvent(ev) : null;
+  const reason = cancelReason(ev);
 
-  // Editors: conflicts that overlap the blocks each person is called to, plus guardian contacts.
-  const conflictRows = canEdit ? await getConflictsFor(calledIds, productionId, ev.startsAt, ev.endsAt) : [];
+  // Conflicts (one query): editors see everyone called whose blocks overlap one; the viewer's own
+  // people get "You told the team … can't make it" on their call card.
+  const conflictRows = await getConflictsFor([...new Set([...(canEdit ? calledIds : []), ...coveredInCast])], productionId, ev.startsAt, ev.endsAt);
   const blockById = new Map(sheet.blocks.map((b) => [b.id, b]));
   const conflictsByPerson = new Map<string, typeof conflictRows>();
-  for (const c of conflictRows) {
+  for (const c of canEdit ? conflictRows : []) {
     const call = sheet.calls.get(c.personId);
     if (!call) continue;
     const hit = call.blockIds.some((bid) => {
@@ -70,6 +75,10 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
     });
     if (hit) conflictsByPerson.set(c.personId, [...(conflictsByPerson.get(c.personId) ?? []), c]);
   }
+  const myAbsence = (personId: string) => {
+    const c = sheet.calls.get(personId);
+    return c ? conflictRows.find((r) => r.personId === personId && overlaps(c.callAt, c.releaseAt, r.startsAt, r.endsAt)) ?? null : null;
+  };
   const minors = calledIds.filter((id) => sheet.people.get(id)?.isMinor);
   const guardians = await getGuardianContacts(canEdit ? minors : []);
 
@@ -130,7 +139,8 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
           >
             <MapPin className="size-4 shrink-0 text-muted" />
             <span className="underline decoration-line underline-offset-4">{ev.location}</span>
-            <ExternalLink className="size-3.5 shrink-0 text-muted" aria-label="Open in Maps" />
+            <ExternalLink className="size-3.5 shrink-0 text-muted" aria-hidden />
+            <span className="sr-only">(opens in Maps)</span>
           </a>
         ) : null}
       </div>
@@ -144,13 +154,20 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
         <div className="mt-4">
           <Notice tone="danger">
             <span className="font-semibold">This event is cancelled.</span>
-            {ev.changeNote ? ` ${ev.changeNote}` : ""}
+            {reason ? ` ${reason}` : ""}
           </Notice>
         </div>
       ) : canEdit && changed ? (
         <div className="mt-4">
           <Notice tone="warn">
             <span className="font-semibold">Changed {fmtDay(changed, tz)}.</span> {ev.changeNote ?? "Check the times below."}
+          </Notice>
+        </div>
+      ) : familyNote && changed ? (
+        <div className="mt-4">
+          <Notice tone="warn">
+            <span className="font-semibold">Changed {fmtDay(changed, tz)}.</span>
+            <TeamNote note={familyNote} className="mt-1 text-ink" />
           </Notice>
         </div>
       ) : null}
@@ -166,6 +183,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
               </li>
             ))}
           </ul>
+          {myUnacked.teamNote ? <TeamNote note={myUnacked.teamNote} className="mt-2" /> : null}
           <div className="mt-3 flex justify-end">
             <GotItButton eventId={ev.id} revision={myUnacked.latestRevision} />
           </div>
@@ -179,7 +197,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
               <strong>
                 {ackStatus.seenCount} of {ackStatus.total}
               </strong>{" "}
-              affected {ackStatus.total === 1 ? "family has" : "families have"} seen the change:{" "}
+              {ackStatus.total === 1 ? "person's family has" : "people's families have"} seen the change:{" "}
               <span className="text-muted">{ackStatus.latestChange.summary}</span>
             </span>
           </summary>
@@ -299,6 +317,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
         <div className="mt-6 space-y-2">
           {coveredPeople.map((p) => {
             const c = sheet.calls.get(p.id);
+            const absence = c && !cancelled ? myAbsence(p.id) : null;
             return (
               <Card key={p.id} className={cn("flex flex-col items-start gap-3 sm:flex-row sm:items-center", c && !cancelled && "border-accent/40 bg-accent-soft/40")}>
                 <div className="flex min-w-0 items-center gap-3 self-stretch">
@@ -310,6 +329,14 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
                   ) : (
                     <p className="text-sm text-muted">Not called for this event</p>
                   )}
+                  {absence ? (
+                    <p className="mt-0.5 flex items-start gap-1.5 text-sm text-muted">
+                      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                      <span>
+                        You told the team {p.userId === user.id ? "you" : p.firstName} can&apos;t make it{absence.note?.trim() ? ` · ${absence.note.trim()}` : ""}
+                      </span>
+                    </p>
+                  ) : null}
                   </div>
                 </div>
                 {c ? (
@@ -322,7 +349,7 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
                         href={`/home/conflicts?${new URLSearchParams({ person: p.id, date: toDateInput(c.callAt, tz), start: toTimeInput(c.callAt, tz), end: toTimeInput(c.releaseAt, tz) })}`}
                         className="no-print -my-1 inline-flex min-h-11 items-center text-sm font-semibold text-accent"
                       >
-                        Can&apos;t make it?
+                        {absence ? "Update" : "Can't make it?"}
                       </Link>
                     ) : null}
                   </div>
@@ -486,5 +513,17 @@ export default async function EventPage({ params }: PageProps<"/p/[productionId]
         </>
       ) : null}
     </div>
+  );
+}
+
+/** The team's own "what changed" words, quoted under the computed change lines. */
+function TeamNote({ note, className }: { note: string; className?: string }) {
+  return (
+    <span className={cn("flex items-start gap-1.5 text-sm", className)}>
+      <Quote className="mt-1 size-3.5 shrink-0 text-muted" aria-hidden />
+      <span>
+        From the team: <q>{note}</q>
+      </span>
+    </span>
   );
 }

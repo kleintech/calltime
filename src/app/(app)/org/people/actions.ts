@@ -9,7 +9,7 @@ import { guardianships, people } from "@/db/schema";
 import { requireOrgAdmin } from "@/lib/access";
 import { normalizeEmail } from "@/lib/auth";
 import { demoRestriction } from "@/lib/demo";
-import { createInvite } from "@/lib/invites";
+import { createInvite, guardianInviteGrant } from "@/lib/invites";
 import { ActionError, deleteCallsTargeting } from "@/lib/production-queries";
 import { firstIssue, type FormState } from "../_components/form-state";
 import { messageForInvite, personName, splitName } from "../_lib/org";
@@ -227,7 +227,11 @@ export async function invitePerson(_: FormState, fd: FormData): Promise<FormStat
   return { ok: `Invite link for ${personName(person)}`, link: url, message: await messageForInvite(invite, url) };
 }
 
-/** Invite link for a new guardian of this (minor) person; their person record is created on accept. */
+/**
+ * Invite link for a guardian of this (minor) person. Their person record is created on accept —
+ * unless the guardian is already on file unlinked under this email, in which case the invite claims
+ * that record instead (see guardianInviteGrant), so one parent never becomes two.
+ */
 export async function inviteGuardian(_: FormState, fd: FormData): Promise<FormState> {
   const { user, person } = await authorizePerson(fd.get("personId"));
   const parsed = z
@@ -236,12 +240,11 @@ export async function inviteGuardian(_: FormState, fd: FormData): Promise<FormSt
   if (!parsed.success) return { error: firstIssue(parsed.error) };
   const restricted = demoRestriction(user.email, "send invites");
   if (restricted) return { error: restricted };
+  const base = { orgId: person.orgId, email: parsed.data.email, guardianOfPersonId: person.id, invitedByUserId: user.id };
   const { invite, url } = await createInvite({
-    orgId: person.orgId,
-    email: parsed.data.email,
+    ...base,
+    ...(await guardianInviteGrant(base)),
     name: parsed.data.name || null,
-    guardianOfPersonId: person.id,
-    invitedByUserId: user.id,
   });
   revalidatePeople(person.id);
   return { ok: `Guardian invite for ${personName(person)}`, link: url, message: await messageForInvite(invite, url) };

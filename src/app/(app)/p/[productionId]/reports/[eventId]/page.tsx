@@ -6,7 +6,7 @@ import { requireProductionAccess } from "@/lib/access";
 import { isUuid } from "@/lib/auditions";
 import { sceneLabel } from "@/lib/calls";
 import { DEPARTMENTS, getReportForEvent, scenesForEvent } from "@/lib/notes";
-import { fmtDateTime, fmtDayLong, fmtRange } from "@/lib/time";
+import { fmtDateTime, fmtDayLong, fmtRange, fmtTime } from "@/lib/time";
 import { BackLink, Badge, Card, Notice, SectionTitle } from "@/components/ui";
 import { ReportForm } from "../report-form";
 
@@ -39,12 +39,21 @@ export default async function ReportPage({ params }: PageProps<"/p/[productionId
   const covered = report ? report.scenesCovered : await scenesForEvent(eventId);
   const author = report?.authorUserId ? await db.query.users.findFirst({ where: eq(users.id, report.authorUserId), columns: { name: true } }) : null;
   const att = await db
-    .select({ status: attendance.status, note: attendance.note, firstName: people.firstName, lastName: people.lastName })
+    .select({
+      status: attendance.status,
+      note: attendance.note,
+      checkedInAt: attendance.checkedInAt,
+      firstName: people.firstName,
+      lastName: people.lastName,
+    })
     .from(attendance)
     .innerJoin(people, eq(people.id, attendance.personId))
     .where(eq(attendance.eventId, eventId))
     .orderBy(asc(people.firstName));
-  const notPresent = att.filter((a) => a.status !== "present");
+  // Late people were there (just not on time), so they count as present; only absent/excused are "not".
+  const late = att.filter((a) => a.status === "late");
+  const away = att.filter((a) => a.status === "absent" || a.status === "excused");
+  const label = (status: string) => status.replace(/_/g, " ").replace(/^./, (ch) => ch.toUpperCase());
   const sceneName = new Map(sceneRows.map((s) => [s.id, sceneLabel(s)]));
 
   return (
@@ -69,12 +78,19 @@ export default async function ReportPage({ params }: PageProps<"/p/[productionId
       {att.length ? (
         <Card className="space-y-1 text-sm">
           <p className="font-semibold">
-            Attendance: {att.length - notPresent.length} present
-            {notPresent.length ? `, ${notPresent.length} not` : ""}
+            Attendance: {att.length - away.length} present
+            {late.length ? ` (${late.length} late)` : ""}
+            {away.length ? `, ${away.length} not` : ""}
           </p>
-          {notPresent.map((a, i) => (
-            <p key={i} className="text-muted">
-              {a.firstName} {a.lastName} — {a.status.replace(/_/g, " ").replace(/^./, (ch) => ch.toUpperCase())}
+          {away.map((a, i) => (
+            <p key={`away-${i}`} className="text-muted">
+              {a.firstName} {a.lastName} — {label(a.status)}
+              {a.note ? ` (${a.note})` : ""}
+            </p>
+          ))}
+          {late.map((a, i) => (
+            <p key={`late-${i}`} className="text-muted">
+              {a.firstName} {a.lastName} — Late{a.checkedInAt ? `, arrived ${fmtTime(a.checkedInAt, tz)}` : ""}
               {a.note ? ` (${a.note})` : ""}
             </p>
           ))}

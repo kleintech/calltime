@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { after } from "next/server";
 import { db } from "@/db";
 import {
@@ -164,8 +164,12 @@ async function buildSnapshots(q: DbOrTx, idx: ProductionCastIndex, tz: string, e
   });
 }
 
-/** Every upcoming published event of a production, snapshotted through `q`. */
-async function snapshotUpcoming(q: DbOrTx, productionId: string) {
+/**
+ * Every upcoming published event of a production, snapshotted through `q`. With `only`, just those
+ * events (an empty list snapshots nothing); `idx` reuses an already-loaded cast index.
+ */
+async function snapshotUpcoming(q: DbOrTx, productionId: string, only?: string[] | null, idx?: ProductionCastIndex) {
+  if (only && only.length === 0) return [];
   const [org] = await q
     .select({ tz: organizations.timezone })
     .from(productions)
@@ -175,10 +179,54 @@ async function snapshotUpcoming(q: DbOrTx, productionId: string) {
   const eventRows = await q
     .select()
     .from(events)
-    .where(and(eq(events.productionId, productionId), eq(events.status, "published"), gte(events.endsAt, new Date())));
+    .where(
+      and(
+        eq(events.productionId, productionId),
+        eq(events.status, "published"),
+        gte(events.endsAt, new Date()),
+        ...(only ? [inArray(events.id, only)] : []),
+      ),
+    );
   if (eventRows.length === 0) return [];
-  const idx = await loadCastIndexWith(q, productionId);
-  return buildSnapshots(q, idx, org.tz, eventRows);
+  return buildSnapshots(q, idx ?? (await loadCastIndexWith(q, productionId)), org.tz, eventRows);
+}
+
+/** What a cast/breakdown/group edit touches, so only events that can be affected are diffed. */
+export type TouchedTargets = { scenes?: string[]; roles?: string[]; groups?: string[]; people?: string[] };
+
+/**
+ * Upcoming published events whose calls could change when these targets change: events calling a
+ * touched scene or group directly; for a touched role (or a touched person's roles) also every scene
+ * and group that contains the role, the role itself, the person, and full-cast calls.
+ */
+async function relevantEventIds(q: DbOrTx, idx: ProductionCastIndex, productionId: string, touched: TouchedTargets): Promise<string[]> {
+  const keys = new Set<string>();
+  const addRole = (roleId: string) => {
+    keys.add(`role:${roleId}`);
+    keys.add("all_cast:");
+    for (const [sceneId, rs] of idx.rolesByScene) if (rs.includes(roleId)) keys.add(`scene:${sceneId}`);
+    for (const [groupId, rs] of idx.rolesByGroup) if (rs.includes(roleId)) keys.add(`group:${groupId}`);
+  };
+  for (const s of touched.scenes ?? []) keys.add(`scene:${s}`);
+  for (const g of touched.groups ?? []) keys.add(`group:${g}`);
+  for (const r of touched.roles ?? []) addRole(r);
+  for (const p of touched.people ?? []) {
+    keys.add(`person:${p}`);
+    keys.add("all_cast:");
+    for (const r of idx.rolesByPerson.get(p) ?? []) addRole(r);
+  }
+  if (keys.size === 0) return [];
+  const conds = [...keys].map((k) => {
+    const [target, id] = k.split(":") as [CallTarget["target"], string];
+    return id ? and(eq(blockCalls.target, target), eq(blockCalls.targetId, id))! : eq(blockCalls.target, target);
+  });
+  const rows = await q
+    .selectDistinct({ id: events.id })
+    .from(blockCalls)
+    .innerJoin(eventBlocks, eq(eventBlocks.id, blockCalls.blockId))
+    .innerJoin(events, eq(events.id, eventBlocks.eventId))
+    .where(and(eq(events.productionId, productionId), eq(events.status, "published"), gte(events.endsAt, new Date()), or(...conds)));
+  return rows.map((r) => r.id);
 }
 
 /**
@@ -195,11 +243,19 @@ export async function withCallImpact<T>(
   productionId: string,
   actorUserId: string | null,
   fn: (tx: DbOrTx) => Promise<T>,
+  /** When known, only events that reference these targets are snapshotted and diffed (much faster). */
+  touched?: TouchedTargets,
 ): Promise<{ result: T; changes: (typeof eventChanges.$inferSelect)[] }> {
-  const before = await snapshotUpcoming(tx, productionId);
+  let only: string[] | null = null;
+  let idx: ProductionCastIndex | undefined;
+  if (touched) {
+    idx = await loadCastIndexWith(tx, productionId);
+    only = await relevantEventIds(tx, idx, productionId, touched);
+  }
+  const before = await snapshotUpcoming(tx, productionId, only, idx);
   const result = await fn(tx);
   if (before.length === 0) return { result, changes: [] };
-  const afterList = await snapshotUpcoming(tx, productionId);
+  const afterList = await snapshotUpcoming(tx, productionId, only);
   const afterById = new Map(afterList.map((s) => [s.event.id, s]));
   const changes: (typeof eventChanges.$inferSelect)[] = [];
   for (const b of before) {
@@ -391,7 +447,48 @@ export type FamilyChange = {
   acknowledged: boolean;
   /** Oldest first. `lines` are per covered person ("Maya: Now called 5:30–7:00 PM (was 6:00–7:30 PM)"). */
   changes: { revision: number; summary: string; lines: string[]; createdAt: Date }[];
+  /** The team's own "what changed" words for the latest change shown, or null (see teamNote). */
+  teamNote: string | null;
 };
+
+/** What withCallImpact writes to events.changeNote when a cast/scene edit moves calls: generated, not the team's words. */
+export const GENERIC_CHANGE_NOTE = "Who's called changed — check your call";
+
+/**
+ * The team's own explanation of a change, for families — or null. events.changeNote holds the latest
+ * note, but save flows also fill it with the generated summary when the team typed nothing, so a
+ * note counts only when recordEventChange quoted it in the change row's summary (`… — “note”`). A
+ * cancel reason is never quoted there; the "Cancelled — reason" line already carries it.
+ */
+export function teamNote(event: { changeNote: string | null }, latest: { summary: string } | undefined | null): string | null {
+  const note = event.changeNote?.trim();
+  if (!note || note === GENERIC_CHANGE_NOTE || !latest) return null;
+  return latest.summary.includes(`“${note}”`) ? note : null;
+}
+
+/** The team's note for an event's latest change, read from the change rows (for pages without a FamilyChange). */
+export async function getTeamNoteForEvent(event: { id: string; changeNote: string | null }): Promise<string | null> {
+  const note = event.changeNote?.trim();
+  if (!note || note === GENERIC_CHANGE_NOTE) return null;
+  const [latest] = await db
+    .select({ summary: eventChanges.summary })
+    .from(eventChanges)
+    .where(eq(eventChanges.eventId, event.id))
+    .orderBy(desc(eventChanges.revision), desc(eventChanges.createdAt))
+    .limit(1);
+  return teamNote(event, latest);
+}
+
+/**
+ * Why a cancelled event was cancelled, in the team's words, or null. Cancel flows put the reason in
+ * events.changeNote, but the web flow stores the bare generated summary ("Cancelled") when no reason
+ * was given, and never-changed rows may hold the generic cast-change text.
+ */
+export function cancelReason(event: { status: string; changeNote: string | null }): string | null {
+  if (event.status !== "cancelled") return null;
+  const note = event.changeNote?.trim().replace(/^cancelled(\s*[—–-]\s*|$)/i, "").trim();
+  return note && note !== GENERIC_CHANGE_NOTE ? note : null;
+}
 
 /**
  * Changes that affect anyone this user covers, grouped by event. Only events that haven't ended
@@ -440,7 +537,7 @@ export async function getChangesForUser(
     });
     const entry =
       byEvent.get(event.id) ??
-      ({ event, production, people: [], latestRevision: 0, acknowledged: true, changes: [] } satisfies FamilyChange);
+      ({ event, production, people: [], latestRevision: 0, acknowledged: true, changes: [], teamNote: null } satisfies FamilyChange);
     entry.latestRevision = Math.max(entry.latestRevision, change.revision);
     const seen = (acked.get(event.id) ?? -1) >= change.revision;
     if (!seen) entry.acknowledged = false;
@@ -451,9 +548,9 @@ export async function getChangesForUser(
     }
     byEvent.set(event.id, entry);
   }
-  return [...byEvent.values()]
-    .filter((e) => e.changes.length > 0)
-    .sort((x, y) => x.event.startsAt.getTime() - y.event.startsAt.getTime());
+  const out = [...byEvent.values()].filter((e) => e.changes.length > 0);
+  for (const e of out) e.teamNote = teamNote(e.event, e.changes.at(-1));
+  return out.sort((x, y) => x.event.startsAt.getTime() - y.event.startsAt.getTime());
 }
 
 /** Changes affecting this user's people that they haven't acknowledged ("Got it"). */

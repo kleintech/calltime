@@ -249,10 +249,17 @@ export function eventToInput(
 export type AttendanceStatus = (typeof attendance.$inferSelect)["status"];
 
 /**
- * People called to this event who reported an overlapping conflict (personId → note), and — the
- * first time the attendance sheet opens for the event — mark them "excused". It runs once per
- * event (events.autoExcusedAt), so a stage manager who clears an auto-excuse isn't overridden on
- * the next load; later-reported conflicts are shown as a hint instead.
+ * People called to this event who reported an overlapping conflict (personId → note), marking the
+ * newly reported ones "excused" on the attendance sheet.
+ *
+ * Runs every time the sheet opens, per person: a conflict is applied once — on the first run after
+ * it was reported (conflicts.createdAt > events.autoExcusedAt, the previous run) and only if the
+ * person has no attendance row yet. So an absence reported after the sheet was first opened is
+ * still excused on the next open, while a stage manager who clears (deletes) an auto-excuse isn't
+ * overridden: that conflict was already considered by an earlier run and is shown as a hint instead.
+ * Limitation: `autoExcusedAt` is the app clock at the start of the run and `createdAt` is the DB
+ * clock, so a conflict reported in the same instant as a run could be missed (it still shows as a
+ * hint) if the clocks drift.
  */
 export async function ensureExcusedForConflicts(
   eventId: string,
@@ -263,28 +270,29 @@ export async function ensureExcusedForConflicts(
   const ids = [...calls.keys()];
   const out = new Map<string, string>();
   if (ids.length === 0) return out;
+  // Taken before reading conflicts so one reported mid-run counts as "after this run".
+  const runAt = new Date();
+  const ev = await db.query.events.findFirst({ where: eq(events.id, eventId), columns: { autoExcusedAt: true } });
+  const lastRun = ev?.autoExcusedAt ?? null;
   const from = new Date(Math.min(...[...calls.values()].map((c) => c.callAt.getTime())));
   const to = new Date(Math.max(...[...calls.values()].map((c) => c.releaseAt.getTime())));
   const cs = await getConflictsFor(ids, productionId, from, to);
+  const fresh = new Set<string>(); // people with an overlapping conflict reported since the last run
   for (const c of cs) {
     const call = calls.get(c.personId);
-    if (call && c.startsAt < call.releaseAt && call.callAt < c.endsAt && !out.has(c.personId))
-      out.set(c.personId, c.note ? `Conflict: ${c.note}` : "Reported a conflict");
+    if (!call || !(c.startsAt < call.releaseAt && call.callAt < c.endsAt)) continue;
+    if (!out.has(c.personId)) out.set(c.personId, c.note ? `Conflict: ${c.note}` : "Reported a conflict");
+    if (!lastRun || c.createdAt > lastRun) fresh.add(c.personId);
   }
-  const [first] = await db
-    .update(events)
-    .set({ autoExcusedAt: new Date() })
-    .where(and(eq(events.id, eventId), isNull(events.autoExcusedAt)))
-    .returning({ id: events.id });
-  if (first && out.size) {
+  await db.update(events).set({ autoExcusedAt: runAt }).where(eq(events.id, eventId));
+  if (fresh.size) {
     await db
       .insert(attendance)
-      .values([...out].map(([personId, note]) => ({ eventId, personId, status: "excused" as const, markedByUserId, note })))
-      .onConflictDoNothing();
+      .values([...fresh].map((personId) => ({ eventId, personId, status: "excused" as const, markedByUserId, note: out.get(personId) })))
+      .onConflictDoNothing(); // never touch a mark the stage manager already made
   }
   return out;
 }
-
 
 export type AttendanceSummary = {
   present: number;
