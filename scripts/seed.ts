@@ -10,7 +10,10 @@
  * Midsummer signups include structured conflict dates. "Alice in Wonderland" is a closed show from
  * last spring (Maya as Alice, Ava as the Cheshire Cat) so families have a "Past shows" history.
  *
- *   npm run db:seed
+ *   npm run db:seed -- --yes-wipe
+ *
+ * It refuses to run without --yes-wipe and prints which database it is about to truncate: local and
+ * production can share one Neon database after `vercel env pull`, and seeding that wipes the live demo.
  */
 import { createHash, randomBytes } from "node:crypto";
 import { TZDate } from "@date-fns/tz";
@@ -35,8 +38,28 @@ function dateStr(days: number) {
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
 }
 
+function describeDatabase() {
+  try {
+    const u = new URL(process.env.DATABASE_URL ?? "");
+    return `${u.hostname}${u.pathname}`;
+  } catch {
+    return "(DATABASE_URL not set)";
+  }
+}
+
 async function main() {
-  console.log("Wiping…");
+  const target = describeDatabase();
+  if (!process.argv.includes("--yes-wipe")) {
+    console.error(`db:seed would TRUNCATE every table in ${target}.`);
+    console.error("If that is really the database you want to replace with demo data, run:  npm run db:seed -- --yes-wipe");
+    console.error("(After `vercel env pull`, DATABASE_URL is often the PRODUCTION database. Use a Neon branch for local work.)");
+    process.exit(1);
+  }
+  if (process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production") {
+    console.error("db:seed refuses to run with VERCEL_ENV/NODE_ENV=production.");
+    process.exit(1);
+  }
+  console.log(`Wiping ${target}…`);
   // CASCADE follows every foreign key, so all tables hanging off users / organizations (productions,
   // people, events, resources, volunteers, change log, attendance, notes, reports, push…) are wiped too.
   await db.execute(sql`TRUNCATE users, organizations, sessions RESTART IDENTITY CASCADE`);

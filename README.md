@@ -35,11 +35,21 @@ web-push · mcp-handler. Deployed on Vercel (project `calltime`, team Kleintech)
 
 ```bash
 npm install
-vercel env pull .env.local     # or set DATABASE_URL (+ VAPID_* for push) yourself
+cp .env.example .env.local     # then fill in DATABASE_URL (see below)
 npm run db:migrate             # apply schema migrations (drizzle/*.sql)
-npm run db:seed                # WIPES the database and loads the demo company
+npm run db:seed -- --yes-wipe  # WIPES that database and loads the demo company
 npm run dev                    # http://localhost:3000
 ```
+
+**Which database?** Local and production currently share the project's Neon database, so
+`vercel link && vercel env pull .env.local` hands you the **production** `DATABASE_URL` — seeding it
+wipes the live demo. For local work create a Neon branch (Neon console → Branches, or
+`neonctl branches create --name dev`) and put its connection string in `.env.local`. The seed refuses
+to run without `--yes-wipe` and prints the host it is about to truncate.
+
+Push notifications need a VAPID key pair: `npx web-push generate-vapid-keys`, then set
+`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (a `mailto:` you own). Without them push
+is simply off.
 
 ### Schema changes
 
@@ -55,7 +65,9 @@ npm run db:migrate                          # applies pending migrations to DATA
 Commit the generated files. `npm run build` runs `db:migrate` first, so every Vercel deploy applies
 pending migrations before the new code goes live. A database that was created with the old
 `drizzle-kit push` flow is recognised on the first run and the baseline migration is recorded as
-already applied. `npm run db:push` remains only for throwaway local databases.
+already applied. `npm run db:push` (interactive `drizzle-kit push`) remains only for throwaway local
+databases: it diffs the live schema and may drop columns or data to match, so never point it at a
+database anyone else uses.
 
 `npm run typecheck`, `npx eslint src`. Demo accounts and the domain/permission model are in
 [`docs/SPEC.md`](docs/SPEC.md); the design system in [`docs/DESIGN.md`](docs/DESIGN.md); UX guidelines and
@@ -73,8 +85,26 @@ claude mcp add --transport http calltime https://<host>/api/mcp --header "Author
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Neon Postgres (provisioned by the Vercel Neon integration) |
+| `DATABASE_URL` | Neon Postgres, pooled (provisioned by the Vercel Neon integration) |
+| `DATABASE_URL_UNPOOLED` | Direct (non-pooled) connection; migrations and drizzle-kit use it when set |
+| `SEED_ADMIN_PASSWORD` | Password the seed gives the platform admin `admin@calltime.dev` (a random one is printed if unset) |
 | `APP_URL` | Public base URL (e.g. `https://calltime.app`) used in invite, reset and calendar links; set it in production so a spoofed `Host` header can't mint links to another domain |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web push; push is skipped if unset |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web push (`npx web-push generate-vapid-keys`); push is skipped if unset |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Optional alias of `VAPID_PUBLIC_KEY` exposed to the browser; either works |
 | `DEMO_MODE=1` | Shows one-tap demo sign-in for the seeded demo accounts in production |
 | `RESEND_API_KEY`, `RESEND_FROM` | Optional: email the weekly change digest (preview at `/api/digest/preview`) |
+
+## Deploy
+
+Vercel project `calltime` (team Kleintech). The project is not connected to GitHub yet, so pushes
+don't create previews; deploys are made from the CLI:
+
+```bash
+vercel link                        # once per clone
+vercel deploy --prod               # builds with `npm run build`, which runs db:migrate first
+```
+
+Production has `DEMO_MODE=1` (one-tap demo sign-in on the landing page) and `APP_URL` set to the
+public URL. Connecting the GitHub repo in the Vercel project settings turns every branch push into a
+preview deployment; migrations then run against whatever `DATABASE_URL` that environment has, so give
+previews their own Neon branch before enabling it.

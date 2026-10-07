@@ -211,7 +211,7 @@ export default async function Landing() {
                   <input type="hidden" name="email" value={a.email} />
                   <button
                     type="submit"
-                    className="group flex h-full min-h-24 w-full items-start gap-3 rounded-2xl border border-line bg-bg p-4 text-left transition hover:border-gold hover:shadow-md active:scale-[.99]"
+                    className="group flex h-full min-h-24 w-full items-start gap-3 rounded-2xl border border-line bg-bg p-4 text-left transition hover:border-gold hover:shadow-raised active:scale-[.99]"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block text-xs font-semibold uppercase tracking-wider text-gold">{a.role}</span>
