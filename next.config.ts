@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Self-contained server bundle for the container image (lab k3s); Vercel ignores it.
+  output: "standalone",
   /*
    * Load the Neon driver and Drizzle from node_modules instead of bundling them. Bundled, the
    * Pool class drizzle checks with `instanceof` can be a different copy from the one we construct,

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: calltime
+  labels:
+    app.kubernetes.io/name: calltime
+spec:
+  selector:
+    app.kubernetes.io/name: calltime
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

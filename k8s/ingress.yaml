@@ -1,0 +1,25 @@
+# https://calltime.lab.kleincogroup.com - LAN only. The wildcard cert is served by Traefik's
+# default TLSStore, so there is deliberately no secretName (see lab-k3s CONVENTIONS.md).
+# To also publish it on the Internet as calltime.kleincogroup.com, add that host to both
+# tls.hosts and rules, then run lab-k3s scripts/expose.sh (ask first).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: calltime
+  labels:
+    app.kubernetes.io/name: calltime
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [calltime.lab.kleincogroup.com]
+  rules:
+    - host: calltime.lab.kleincogroup.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: calltime
+                port:
+                  number: 80
