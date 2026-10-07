@@ -6,7 +6,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { guardianships, people, users } from "@/db/schema";
 import { hashPassword, normalizeEmail, requireUser, revokeOtherSessions, verifyPassword } from "@/lib/auth";
-import { createInvite } from "@/lib/invites";
+import { createGuardianInvite, createInvite } from "@/lib/invites";
+import { ActionError } from "@/lib/production-queries";
 import { firstIssue, type FormState } from "../org/_components/form-state";
 import { messageForInvite } from "../org/_lib/org";
 
@@ -69,12 +70,19 @@ export async function inviteCoGuardian(_: FormState, fd: FormData): Promise<Form
     .limit(1);
   if (!link) return { error: "You can only invite guardians for your own kids." };
   if (parsed.data.email === user.email) return { error: "That's your own email — use theirs." };
-  const { invite, url } = await createInvite({
-    orgId: link.minor.orgId,
-    email: parsed.data.email,
-    name: parsed.data.name || null,
-    guardianOfPersonId: link.minor.id,
-    invitedByUserId: user.id,
-  });
+  let created;
+  try {
+    created = await createGuardianInvite({
+      orgId: link.minor.orgId,
+      minorId: link.minor.id,
+      email: parsed.data.email,
+      name: parsed.data.name || null,
+      invitedByUserId: user.id,
+    });
+  } catch (e) {
+    if (e instanceof ActionError) return { error: e.message };
+    throw e;
+  }
+  const { invite, url } = created;
   return { ok: `Invite for ${parsed.data.name || parsed.data.email}`, link: url, message: await messageForInvite(invite, url) };
 }

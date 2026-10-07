@@ -322,7 +322,7 @@ export const events = pgTable(
     changeNote: text("change_note"),
     /** When the last material change (revision bump) or cancellation happened. */
     changedAt: timestamp("changed_at", { withTimezone: true }),
-    /** When conflicts were first auto-marked "excused" on the attendance sheet (runs once per event). */
+    /** Unused (superseded by attendanceClears; auto-excuse is per person now). Safe to drop later. */
     autoExcusedAt: timestamp("auto_excused_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -853,4 +853,22 @@ export const authFailures = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("auth_failures_key_time_idx").on(t.key, t.createdAt)],
+);
+
+/**
+ * A stage manager explicitly cleared someone's attendance mark at an event. Stops the attendance
+ * sheet from auto-excusing them again for a reported conflict.
+ */
+export const attendanceClears = pgTable(
+  "attendance_clears",
+  {
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    clearedAt: timestamp("cleared_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.eventId, t.personId] })],
 );

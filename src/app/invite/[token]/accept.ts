@@ -20,12 +20,21 @@ export async function loadInvite(token: string) {
     invite.invitedByUserId ? db.query.users.findFirst({ where: eq(users.id, invite.invitedByUserId) }) : undefined,
   ]);
   if (!org) return null;
-  const [existingUser, castIn] = await Promise.all([
+  const [existingUser, castIn, personWards] = await Promise.all([
     db.query.users.findFirst({ where: eq(users.email, invite.email) }),
     invite.guardianOfPersonId ?? invite.personId ? currentRoles((invite.guardianOfPersonId ?? invite.personId)!) : [],
+    // A claim invite for a guardian on file: whose calls they'll see.
+    invite.personId
+      ? db
+          .select({ person: people })
+          .from(guardianships)
+          .innerJoin(people, eq(people.id, guardianships.minorId))
+          .where(eq(guardianships.guardianId, invite.personId))
+      : [],
   ]);
+  const wardCast = personWards.length ? await currentRoles(personWards[0].person.id) : [];
   const status: "ok" | "accepted" | "expired" = invite.acceptedAt ? "accepted" : invite.expiresAt < new Date() ? "expired" : "ok";
-  return { invite, org, production, person, ward, inviter, existingUser, castIn, status };
+  return { invite, org, production, person, ward, inviter, existingUser, castIn, personWards: personWards.map((w) => w.person), wardCast, status };
 }
 
 export class InviteError extends Error {}

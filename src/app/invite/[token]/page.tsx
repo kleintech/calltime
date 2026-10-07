@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Card, LinkButton, buttonClass } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth";
+import { joinNames } from "@/app/(app)/org/_lib/org";
 import { loadInvite } from "./accept";
 import { signOutToInvite } from "./actions";
 import { AcceptForm, CreateAccountForm, SignInAcceptForm } from "./forms";
@@ -46,7 +47,7 @@ export default async function InvitePage({ params }: PageProps<"/invite/[token]"
       />
     );
   }
-  const { invite, org, production, person, ward, inviter, existingUser, castIn, status } = data;
+  const { invite, org, production, person, ward, inviter, existingUser, castIn, personWards, wardCast, status } = data;
   const askWho = inviter ? `${inviter.name} at ${org.name}` : org.name;
   if (status === "accepted") {
     return <Problem title="This invite has already been used" body={`If that wasn't you, ask ${askWho} for a new link.`} />;
@@ -78,6 +79,23 @@ export default async function InvitePage({ params }: PageProps<"/invite/[token]"
     );
     cta = `See ${ward.firstName}'s calls`;
     ctaSignedIn = `Add ${ward.firstName} to my account`;
+  } else if (person && personWards.length && !castRoles.length) {
+    const names = joinNames(personWards.map((w) => w.firstName));
+    const wardShow = wardCast[0]?.production ?? null;
+    headline = (
+      <>
+        {org.name} invited you to see <span className="text-[#f0b454]">{names}&apos;s</span> rehearsal calls
+        {wardShow ? (
+          <>
+            {" "}
+            for <em>{wardShow}</em>
+          </>
+        ) : null}
+        .
+      </>
+    );
+    cta = `See ${names}'s calls`;
+    ctaSignedIn = `Add ${names} to my account`;
   } else if (person && castRoles.length) {
     headline = (
       <>

@@ -8,7 +8,7 @@ import { db } from "@/db";
 import { guardianships, people } from "@/db/schema";
 import { requireOrgAdmin } from "@/lib/access";
 import { normalizeEmail } from "@/lib/auth";
-import { createInvite } from "@/lib/invites";
+import { createGuardianInvite, createInvite } from "@/lib/invites";
 import { ActionError } from "@/lib/production-queries";
 import { firstIssue, type FormState } from "../_components/form-state";
 import { messageForInvite, personName, splitName } from "../_lib/org";
@@ -223,13 +223,20 @@ export async function inviteGuardian(_: FormState, fd: FormData): Promise<FormSt
     .object({ name: z.string().trim().max(120), email: z.email("Enter the guardian's email address.") })
     .safeParse({ name: str(fd, "name"), email: normalizeEmail(str(fd, "email")) });
   if (!parsed.success) return { error: firstIssue(parsed.error) };
-  const { invite, url } = await createInvite({
-    orgId: person.orgId,
-    email: parsed.data.email,
-    name: parsed.data.name || null,
-    guardianOfPersonId: person.id,
-    invitedByUserId: user.id,
-  });
+  let created;
+  try {
+    created = await createGuardianInvite({
+      orgId: person.orgId,
+      minorId: person.id,
+      email: parsed.data.email,
+      name: parsed.data.name || null,
+      invitedByUserId: user.id,
+    });
+  } catch (e) {
+    if (e instanceof ActionError) return { error: e.message };
+    throw e;
+  }
+  const { invite, url } = created;
   revalidatePeople(person.id);
   return { ok: `Guardian invite for ${personName(person)}`, link: url, message: await messageForInvite(invite, url) };
 }

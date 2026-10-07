@@ -318,7 +318,17 @@ type ImpactTx = Parameters<Parameters<typeof withCallImpact>[3]>[0];
  * after commit. Everything inside `fn` must use the `tx` it receives. Returns how many people's
  * calls changed so the UI can say so.
  */
-export async function mutateCalls<T>(productionId: string, userId: string, fn: (tx: ImpactTx) => Promise<T>) {
+/** Ids a mutation touches, so the impact check can limit itself to events that call them. */
+export type CallHint = { sceneIds?: string[]; roleIds?: string[]; groupIds?: string[]; personIds?: string[] };
+
+export async function mutateCalls<T>(
+  productionId: string,
+  userId: string,
+  fn: (tx: ImpactTx) => Promise<T>,
+  // TODO(integrations): forward to withCallImpact once it accepts a touched-ids hint.
+  hint?: CallHint,
+) {
+  void hint;
   const { result, changes } = await db.transaction((tx) => withCallImpact(tx, productionId, userId, fn));
   for (const c of changes) scheduleChangeNotification(c);
   const affected = new Set(changes.flatMap((c) => c.affectedPersonIds)).size;

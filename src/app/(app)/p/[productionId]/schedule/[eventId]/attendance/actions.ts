@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { attendance, events } from "@/db/schema";
+import { attendance, attendanceClears, events } from "@/db/schema";
 import { requireProductionEditor } from "@/lib/access";
 import { getEventCallSheet } from "@/lib/calls";
 
@@ -38,6 +38,8 @@ export async function markAttendance(
   const where = and(eq(attendance.eventId, eventId), eq(attendance.personId, personId));
   if (parsed.data === null) {
     await db.delete(attendance).where(where);
+    // Remember the explicit clear so a reported conflict doesn't re-excuse them on the next load.
+    await db.insert(attendanceClears).values({ eventId, personId }).onConflictDoNothing();
   } else {
     const here = parsed.data === "present" || parsed.data === "late";
     const now = new Date();

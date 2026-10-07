@@ -2,7 +2,7 @@ import "server-only";
 import { and, desc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { invites, organizations, people, productions, roleAssignments, roles } from "@/db/schema";
+import { guardianships, invites, organizations, people, productions, roleAssignments, roles } from "@/db/schema";
 import { getUserOrgs } from "@/lib/access";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { inviteUrl } from "@/lib/invites";
@@ -55,6 +55,11 @@ export async function currentRoles(personId: string) {
     .orderBy(desc(productions.createdAt));
 }
 
+export function joinNames(names: string[]) {
+  const n = [...new Set(names)].sort();
+  return n.length <= 1 ? (n[0] ?? "") : `${n.slice(0, -1).join(", ")} & ${n[n.length - 1]}`;
+}
+
 /** The prewritten text an admin sends with an invite link (editable before sharing). */
 export function inviteMessage(args: {
   orgName: string;
@@ -82,11 +87,21 @@ export async function messageForInvite(invite: typeof invites.$inferSelect, url:
     subjectId ? currentRoles(subjectId) : [],
     invite.productionId ? db.query.productions.findFirst({ where: eq(productions.id, invite.productionId) }) : undefined,
   ]);
+  // A claim invite for a guardian on file: talk about their kids, not "your calls".
+  let wardNames: string | null = invite.guardianOfPersonId ? (subject?.firstName ?? null) : null;
+  if (!wardNames && invite.personId && castIn.length === 0) {
+    const wards = await db
+      .select({ first: people.firstName })
+      .from(guardianships)
+      .innerJoin(people, eq(people.id, guardianships.minorId))
+      .where(eq(guardianships.guardianId, invite.personId));
+    if (wards.length) wardNames = joinNames(wards.map((w) => w.first));
+  }
   return inviteMessage({
     orgName: org?.name ?? "your theater company",
     url,
-    wardFirstName: invite.guardianOfPersonId ? subject?.firstName : null,
-    isSelf: !!invite.personId,
+    wardFirstName: wardNames,
+    isSelf: !!invite.personId && !wardNames,
     productionTitle: prod?.title ?? castIn[0]?.production ?? null,
     creativeTitle: invite.creativeTitle,
   });

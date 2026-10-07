@@ -3,7 +3,7 @@ import { TZDate } from "@date-fns/tz";
 import { addDays } from "date-fns";
 import { and, asc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/db";
-import { attendance, blockCalls, conflicts, eventBlocks, events, guardianships, people, users } from "@/db/schema";
+import { attendance, attendanceClears, blockCalls, conflicts, eventBlocks, events, guardianships, people, users } from "@/db/schema";
 import { loadCastIndex, resolveTarget, sceneLabel, targetLabel, type ProductionCastIndex } from "./calls";
 import { callKey, personName, sceneShort, type CallRef, type EditorOptions, type EventInput } from "./schedule-shared";
 import { toDateInput, toTimeInput } from "./time";
@@ -249,10 +249,9 @@ export function eventToInput(
 export type AttendanceStatus = (typeof attendance.$inferSelect)["status"];
 
 /**
- * People called to this event who reported an overlapping conflict (personId → note), and — the
- * first time the attendance sheet opens for the event — mark them "excused". It runs once per
- * event (events.autoExcusedAt), so a stage manager who clears an auto-excuse isn't overridden on
- * the next load; later-reported conflicts are shown as a hint instead.
+ * People called to this event who reported an overlapping conflict (personId → note). Each of them
+ * who has no attendance mark yet — and whom a stage manager hasn't explicitly cleared — is marked
+ * "excused". Runs on every load of the attendance sheet, so later-reported conflicts are picked up.
  */
 export async function ensureExcusedForConflicts(
   eventId: string,
@@ -271,20 +270,19 @@ export async function ensureExcusedForConflicts(
     if (call && c.startsAt < call.releaseAt && call.callAt < c.endsAt && !out.has(c.personId))
       out.set(c.personId, c.note ? `Conflict: ${c.note}` : "Reported a conflict");
   }
-  const [first] = await db
-    .update(events)
-    .set({ autoExcusedAt: new Date() })
-    .where(and(eq(events.id, eventId), isNull(events.autoExcusedAt)))
-    .returning({ id: events.id });
-  if (first && out.size) {
-    await db
-      .insert(attendance)
-      .values([...out].map(([personId, note]) => ({ eventId, personId, status: "excused" as const, markedByUserId, note })))
-      .onConflictDoNothing();
-  }
+  if (out.size === 0) return out;
+  const cleared = await db
+    .select({ personId: attendanceClears.personId })
+    .from(attendanceClears)
+    .where(and(eq(attendanceClears.eventId, eventId), inArray(attendanceClears.personId, [...out.keys()])));
+  const skip = new Set(cleared.map((c) => c.personId));
+  const rows = [...out]
+    .filter(([personId]) => !skip.has(personId))
+    .map(([personId, note]) => ({ eventId, personId, status: "excused" as const, markedByUserId, note }));
+  // onConflictDoNothing: never overwrite a mark someone already made
+  if (rows.length) await db.insert(attendance).values(rows).onConflictDoNothing();
   return out;
 }
-
 
 export type AttendanceSummary = {
   present: number;

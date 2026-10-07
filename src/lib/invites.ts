@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/db";
 import { creativeTeam, guardianships, invites, orgMembers, people, roleAssignments, roles, users } from "@/db/schema";
@@ -31,7 +31,7 @@ export type InviteGrant = {
  *    cast in (or is a guardian of someone cast in).
  * Throws ActionError (friendly message) otherwise.
  */
-async function assertMayClaimPerson(grant: InviteGrant & { personId: string }) {
+async function assertMayClaimPerson(grant: InviteGrant & { personId: string; guardianOfMinorId?: string }) {
   const person = await db.query.people.findFirst({ where: and(eq(people.id, grant.personId), eq(people.orgId, grant.orgId)) });
   if (!person) throw new ActionError("That person isn't in this company.");
   if (person.userId) throw new ActionError("That person already has an account.");
@@ -49,6 +49,19 @@ async function assertMayClaimPerson(grant: InviteGrant & { personId: string }) {
     where: and(eq(orgMembers.orgId, grant.orgId), eq(orgMembers.userId, inviter.id), eq(orgMembers.role, "admin")),
   });
   if (admin) return;
+  // A guardian inviting a co-guardian already on file for one of their own kids.
+  if (person.email && grant.guardianOfMinorId) {
+    const shared = await db
+      .select({ id: guardianships.minorId })
+      .from(guardianships)
+      .innerJoin(people, eq(people.id, guardianships.guardianId))
+      .where(and(eq(guardianships.minorId, grant.guardianOfMinorId), eq(people.userId, inviter.id), eq(people.orgId, grant.orgId)))
+      .limit(1);
+    const claimedIsGuardian = await db.query.guardianships.findFirst({
+      where: and(eq(guardianships.guardianId, person.id), eq(guardianships.minorId, grant.guardianOfMinorId)),
+    });
+    if (shared.length && claimedIsGuardian) return;
+  }
   // Editor of a production where this person (or someone they're guardian of) is cast.
   const wards = await db.select({ id: guardianships.minorId }).from(guardianships).where(eq(guardianships.guardianId, person.id));
   const ids = [person.id, ...wards.map((w) => w.id)];
@@ -62,8 +75,11 @@ async function assertMayClaimPerson(grant: InviteGrant & { personId: string }) {
   if (hit.length === 0) throw new ActionError("You can only invite people cast in a production you manage.");
 }
 
-export async function createInvite(grant: InviteGrant) {
+export async function createInvite(grant: InviteGrant & { /** internal: see createGuardianInvite */ guardianOfMinorId?: string }) {
   if (grant.personId) await assertMayClaimPerson({ ...grant, personId: grant.personId });
+  const { guardianOfMinorId: _ignored, ...rest } = grant;
+  void _ignored;
+  grant = rest;
   const token = randomToken(18);
   const [row] = await db
     .insert(invites)
