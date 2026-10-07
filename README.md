@@ -83,13 +83,17 @@ development env as `DEVDB_*`), not the production one.
 SHA=$(git rev-parse --short HEAD)
 docker build -t registry.lab.kleincogroup.com/calltime/calltime:$SHA . && docker push registry.lab.kleincogroup.com/calltime/calltime:$SHA
 (cd k8s && kustomize edit set image registry.lab.kleincogroup.com/calltime/calltime:$SHA)  # or edit newTag
+(set -a; . ./.env.k3s; set +a; npx tsx scripts/migrate.ts)   # migrate the dev DB first
 kubectl -n dev-calltime apply -k k8s/
 ```
+
+`.env.k3s` (gitignored) holds the dev database URL (from `DEVDB_*` in `.env.local`) plus the VAPID keys.
+The image runs the bare `npm run build:app`, so it never touches a database at build time.
 
 Runtime config lives in the Secret `calltime-env` (DATABASE_URL, VAPID_*, APP_URL, DEMO_MODE),
 created with `kubectl -n dev-calltime create secret generic calltime-env --from-env-file=<file>`
 and never committed. Seed the dev database with its URL exported, e.g.
-`set -a; . ./.env.k3s; set +a; npx tsx scripts/seed.ts`.
+`set -a; . ./.env.k3s; set +a; npx tsx scripts/seed.ts --yes-wipe`.
 
 ### Connect Claude (MCP)
 
