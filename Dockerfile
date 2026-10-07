@@ -18,7 +18,9 @@ RUN npm ci
 FROM deps AS build
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+# Bare Next build: `npm run build` also runs db:migrate, which needs a database. Migrations run at
+# deploy time instead (see README "Dev deploy on the lab k3s cluster").
+RUN npm run build:app
 
 FROM node:${NODE_VERSION}-slim AS runtime
 ENV NODE_ENV=production \
