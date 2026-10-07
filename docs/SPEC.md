@@ -41,7 +41,7 @@ Minors usually have no account; their guardians do. Older kids may have their ow
 
 ## Dev
 
-- `.env.local` holds `DATABASE_URL` (Neon). `npm run db:push` applies schema changes; `npm run db:seed` wipes and loads the demo ("Riverside Youth Theatre": *Pirates of Penzance* in rehearsals, *Midsummer* in auditions). All demo passwords: `calltime` — except the platform admin `admin@calltime.dev`, whose password comes from `SEED_ADMIN_PASSWORD` in `.env.local` (never the public demo password; it is not offered for one-tap demo sign-in).
+- `.env.local` holds `DATABASE_URL` (Neon). schema changes are SQL migrations: edit `src/db/schema.ts`, `npm run db:generate -- --name <what>`, commit `drizzle/`, and `npm run db:migrate` applies them (also runs at the start of `npm run build`, so deploys migrate themselves); `npm run db:seed` wipes and loads the demo ("Riverside Youth Theatre": *Pirates of Penzance* in rehearsals, *Midsummer* in auditions). All demo passwords: `calltime` — except the platform admin `admin@calltime.dev`, whose password comes from `SEED_ADMIN_PASSWORD` in `.env.local` (never the public demo password; it is not offered for one-tap demo sign-in).
 - Shared dev server: http://localhost:3100 (already running; hot reloads). Authed requests: `curl -b "$(npm run -s dev-login -- director@riverside.dev)" http://localhost:3100/...`
 - Demo users (password `calltime`): `office@riverside.dev` (org admin), `director@` `choreo@` `music@` `sm@riverside.dev` (creative team), `dana@family.dev` (guardian of Maya & Leo), `marcus@family.dev` (guardian of Ava), `sam@family.dev` (teen performer, Frederic).
 - Checks: `npm run typecheck`, `npx eslint <paths>`. Scripts importing `src/lib/*` need `npx tsx --conditions=react-server --env-file=.env.local`.

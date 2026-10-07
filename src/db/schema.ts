@@ -32,6 +32,22 @@ export const users = pgTable("users", {
   isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   /** Secret token for the personal iCalendar feed (/api/calendar/<token>). Rotatable. */
   calendarToken: text("calendar_token").notNull().unique(),
+  /** First time a calendar app fetched the feed (or the user confirmed it's set up). Null = not yet. */
+  calendarConnectedAt: timestamp("calendar_connected_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** One-time password reset links (/login/reset/<token>). Only the sha256 of the token is stored. */
+export const passwordResets = pgTable("password_resets", {
+  id: id(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  /** Set when a company admin issued the link for someone (no mailer needed). */
+  issuedByUserId: uuid("issued_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
 

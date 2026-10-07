@@ -36,10 +36,26 @@ web-push · mcp-handler. Deployed on Vercel (project `calltime`, team Kleintech)
 ```bash
 npm install
 vercel env pull .env.local     # or set DATABASE_URL (+ VAPID_* for push) yourself
-npm run db:push                # apply schema
+npm run db:migrate             # apply schema migrations (drizzle/*.sql)
 npm run db:seed                # WIPES the database and loads the demo company
 npm run dev                    # http://localhost:3000
 ```
+
+### Schema changes
+
+The schema lives in `src/db/schema.ts`; the database is changed only through SQL migrations in
+`drizzle/`, never by hand:
+
+```bash
+# 1. edit src/db/schema.ts
+npm run db:generate -- --name add_widgets   # writes drizzle/000N_add_widgets.sql + meta
+npm run db:migrate                          # applies pending migrations to DATABASE_URL
+```
+
+Commit the generated files. `npm run build` runs `db:migrate` first, so every Vercel deploy applies
+pending migrations before the new code goes live. A database that was created with the old
+`drizzle-kit push` flow is recognised on the first run and the baseline migration is recorded as
+already applied. `npm run db:push` remains only for throwaway local databases.
 
 `npm run typecheck`, `npx eslint src`. Demo accounts and the domain/permission model are in
 [`docs/SPEC.md`](docs/SPEC.md); the design system in [`docs/DESIGN.md`](docs/DESIGN.md); UX guidelines and
