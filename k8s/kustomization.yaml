@@ -13,4 +13,4 @@ images:
   # so Argo CD rolls out exactly what is committed. Update with:
   #   (cd k8s && kustomize edit set image registry.lab.kleincogroup.com/calltime/calltime:<sha>)
   - name: registry.lab.kleincogroup.com/calltime/calltime
-    newTag: replace-with-git-sha
+    newTag: dddfe71

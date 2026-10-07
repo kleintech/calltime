@@ -73,6 +73,24 @@ database anyone else uses.
 [`docs/SPEC.md`](docs/SPEC.md); the design system in [`docs/DESIGN.md`](docs/DESIGN.md); UX guidelines and
 review in [`docs/ux/`](docs/ux); competitive research and feature ideas in [`docs/research/`](docs/research).
 
+### Dev deploy on the lab k3s cluster
+
+Dev runs in the lab cluster (namespace `dev-calltime`) at https://calltime.lab.kleincogroup.com,
+against its **own** Neon database (`calltime-dev-db`, exposed to the Vercel project's
+development env as `DEVDB_*`), not the production one.
+
+```bash
+SHA=$(git rev-parse --short HEAD)
+docker build -t registry.lab.kleincogroup.com/calltime/calltime:$SHA . && docker push registry.lab.kleincogroup.com/calltime/calltime:$SHA
+(cd k8s && kustomize edit set image registry.lab.kleincogroup.com/calltime/calltime:$SHA)  # or edit newTag
+kubectl -n dev-calltime apply -k k8s/
+```
+
+Runtime config lives in the Secret `calltime-env` (DATABASE_URL, VAPID_*, APP_URL, DEMO_MODE),
+created with `kubectl -n dev-calltime create secret generic calltime-env --from-env-file=<file>`
+and never committed. Seed the dev database with its URL exported, e.g.
+`set -a; . ./.env.k3s; set +a; npx tsx scripts/seed.ts`.
+
 ### Connect Claude (MCP)
 
 Create a key at `/org/api-keys`, then:
