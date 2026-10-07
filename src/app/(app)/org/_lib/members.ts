@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { orgMembers, users } from "@/db/schema";
+import { demoRestriction } from "@/lib/demo";
 import { createInvite } from "@/lib/invites";
 import type { FormState } from "../_components/form-state";
 import { messageForInvite } from "./org";
@@ -33,6 +34,11 @@ export async function grantOrgRoleByEmail(args: {
     }
     return { error: `${user.name} (${user.email}) is already ${role === "admin" ? "an admin" : "a member"} here.` };
   }
+  // Invite links are addressed to arbitrary inboxes, so demo admins (which anyone can become) can't
+  // mint them. Promoting someone already in the company (above) stays inside the sandbox.
+  const inviter = await db.query.users.findFirst({ columns: { email: true }, where: eq(users.id, args.invitedByUserId) });
+  const restricted = inviter ? demoRestriction(inviter.email, "send invites") : null;
+  if (restricted) return { error: restricted };
   const { invite, url } = await createInvite({
     orgId: args.orgId,
     email: args.email,

@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { guardianships, people, roleAssignments, roles } from "@/db/schema";
 import { requireProductionEditor } from "@/lib/access";
 import { normalizeEmail } from "@/lib/auth";
+import { demoRestriction } from "@/lib/demo";
 import { createInvite } from "@/lib/invites";
 import {
   ActionError,
@@ -187,7 +188,7 @@ export async function addRoleToPerson(productionId: string, personId: string, _:
 
 export async function updatePerson(productionId: string, personId: string, _: FormState, fd: FormData): Promise<FormState> {
   return formAction(async () => {
-    const { org, isOrgAdmin } = await requireProductionEditor(productionId);
+    const { org, user, isOrgAdmin } = await requireProductionEditor(productionId);
     const person = await getPersonInProduction(productionId, org.id, personId);
     const data = parseForm(newPersonSchema, fd);
     // The email on file decides who may claim this record via an invite, so an editor can add a
@@ -196,6 +197,11 @@ export async function updatePerson(productionId: string, personId: string, _: Fo
       throw new ActionError(`Only a company admin can change ${personName(person)}'s email.`);
     }
     if (!isOrgAdmin && person.email && !data.email) data.email = person.email;
+    // Demo admins (anyone can become one) may fill a blank email but never replace or clear one.
+    if (person.email && data.email !== normalizeEmail(person.email)) {
+      const restricted = demoRestriction(user.email, "change email addresses");
+      if (restricted) throw new ActionError(restricted);
+    }
     await db.update(people).set(data).where(eq(people.id, personId));
     revalidate(productionId);
     return { message: "Saved." };
@@ -255,6 +261,8 @@ export async function invitePerson(productionId: string, personId: string, _: Fo
     const { org, user, production } = await requireProductionEditor(productionId);
     const person = await getPersonInProduction(productionId, org.id, personId);
     if (person.userId) throw new ActionError(`${personName(person)} already has an account.`);
+    const restricted = demoRestriction(user.email, "send invites");
+    if (restricted) throw new ActionError(restricted);
     const { email } = parseForm(z.object({ email: optEmail }), fd);
     if (!email) throw new ActionError("Enter the email they'll sign in with.");
     if (!person.email) await db.update(people).set({ email }).where(eq(people.id, person.id));

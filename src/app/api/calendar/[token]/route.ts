@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -18,6 +18,19 @@ export async function GET(_req: NextRequest, ctx: RouteContext<"/api/calendar/[t
 
   const user = await db.query.users.findFirst({ where: eq(users.calendarToken, token) });
   if (!user) return notFound();
+
+  // The first fetch by any calendar app means the subscription is set up: remember it so the
+  // app can stop asking. Never let this bookkeeping break the feed itself.
+  if (!user.calendarConnectedAt) {
+    try {
+      await db
+        .update(users)
+        .set({ calendarConnectedAt: new Date() })
+        .where(and(eq(users.id, user.id), isNull(users.calendarConnectedAt)));
+    } catch (err) {
+      console.error("calendar feed: could not mark calendar as connected", err);
+    }
+  }
 
   const body = await buildUserFeed(user, await appBaseUrl());
   return new Response(body, {

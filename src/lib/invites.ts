@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { db } from "@/db";
 import { creativeTeam, guardianships, invites, orgMembers, people, roleAssignments, roles, users } from "@/db/schema";
 import { normalizeEmail, randomToken } from "./auth";
+import { demoRestriction } from "./demo";
 import { ActionError } from "./production-queries";
 
 /**
@@ -72,6 +73,13 @@ async function assertMayClaimPerson(grant: InviteGrant & { personId: string }) {
 }
 
 export async function createInvite(grant: InviteGrant) {
+  // Backstop for every invite path: demo accounts (which anyone on the internet can become) must
+  // not address links from our domain to real inboxes. Callers check earlier for a friendly message.
+  if (grant.invitedByUserId) {
+    const inviter = await db.query.users.findFirst({ columns: { email: true }, where: eq(users.id, grant.invitedByUserId) });
+    const restricted = inviter ? demoRestriction(inviter.email, "send invites") : null;
+    if (restricted) throw new ActionError(restricted);
+  }
   if (grant.personId) await assertMayClaimPerson({ ...grant, personId: grant.personId });
   const token = randomToken(18);
   const [row] = await db

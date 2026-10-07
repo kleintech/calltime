@@ -16,6 +16,7 @@ import {
   uniqueSlug,
   type AuditionQuestion,
 } from "@/lib/auditions";
+import { demoRestriction } from "@/lib/demo";
 import { createInvite, inviteUrl } from "@/lib/invites";
 import { fromLocalInput } from "@/lib/time";
 
@@ -335,14 +336,17 @@ export async function castAction(_: CastState, fd: FormData): Promise<CastState>
     createdByUserId: ctx.user.id,
   });
   let invites: InviteLink[] | undefined;
-  if (fd.get("invite") === "on") invites = await invitesFor(ctx, [ctx.signup.id]);
+  // Casting stays in the sandbox; invite links addressed to real inboxes don't, so demo accounts get
+  // the cast without the links.
+  const demoInvites = demoRestriction(ctx.user.email, "send invites");
+  if (fd.get("invite") === "on" && !demoInvites) invites = await invitesFor(ctx, [ctx.signup.id]);
   revalidate(ctx.productionId);
   revalidatePath(`/p/${ctx.productionId}`, "layout");
   const g = result.guardian ? ` Guardian ${result.guardian.name} ${result.guardian.created ? "added" : "linked"}.` : "";
   const c = result.conflictsAdded ? ` ${result.conflictsAdded} conflict${result.conflictsAdded === 1 ? "" : "s"} added to the schedule.` : "";
   return {
     ok: `${result.personName} cast.${result.createdPerson ? " New person record created." : " Matched an existing person record."}${g}${c}`,
-    warning: result.guardianWarning ?? undefined,
+    warning: result.guardianWarning ?? (fd.get("invite") === "on" ? demoInvites ?? undefined : undefined),
     invites,
   };
 }
@@ -407,6 +411,8 @@ export async function generateInvites(_: CastState, fd: FormData): Promise<CastS
   const ctx = await auditionCtx(fd);
   const ids = fd.getAll("signupIds").map(String).filter(isUuid);
   if (ids.length === 0) return { error: "Nobody cast yet." };
+  const restricted = demoRestriction(ctx.user.email, "send invites");
+  if (restricted) return { error: restricted };
   const invites = await invitesFor(ctx, ids);
   if (invites.length === 0) return { ok: "Everyone cast already has an account (or no email on file)." };
   return { ok: `${invites.length} invite link${invites.length === 1 ? "" : "s"} created. Send each one to its person.`, invites };

@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, gte, inArray, lt, min, ne, or } from "drizzle-orm";
-import { Ban, CalendarClock, FolderOpen, HandHeart, Megaphone, NotebookPen, CalendarPlus, ChevronRight, ExternalLink, MapPin, RefreshCw, StickyNote, TriangleAlert } from "lucide-react";
+import { Ban, CalendarClock, FolderOpen, HandHeart, Megaphone, NotebookPen, CalendarPlus, Check, ChevronRight, ExternalLink, MapPin, RefreshCw, StickyNote, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
 import { announcements, changeAcks, eventBlocks, eventChanges, events, organizations } from "@/db/schema";
@@ -298,7 +298,13 @@ export default async function HomePage({ searchParams }: PageProps<"/home">) {
         )
       ) : null}
 
-      {covered.length > 0 ? (
+      {covered.length > 0 && user.calendarConnectedAt ? (
+        <Link href="/home/calendar" className="mt-4 flex min-h-11 items-center gap-2 px-1 text-sm text-muted hover:text-ink">
+          <Check className="size-4 shrink-0 text-success" aria-hidden />
+          <span className="min-w-0 flex-1">Calendar sync on</span>
+          <ChevronRight className="size-4 shrink-0" />
+        </Link>
+      ) : covered.length > 0 ? (
         <Link href="/home/calendar" className="mt-4 flex items-center gap-3 rounded-2xl border border-line bg-surface p-4 hover:bg-surface-2">
           <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-gold-soft text-gold">
             <CalendarPlus className="size-5" />

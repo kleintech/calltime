@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { creativeTeam, invites, orgMembers, users } from "@/db/schema";
 import { requireProductionEditor } from "@/lib/access";
+import { demoRestriction } from "@/lib/demo";
 import { createInvite } from "@/lib/invites";
 import { ActionError, formAction, isUuid, parseForm, type FormState } from "@/lib/production-queries";
 
@@ -56,6 +57,8 @@ export async function addTeamMember(productionId: string, _: FormState, fd: Form
       revalidate(productionId);
       return { message: `${existing.name} added as ${title}.` };
     }
+    const restricted = demoRestriction(user.email, "send invites");
+    if (restricted) throw new ActionError(restricted);
     const { url } = await createInvite({
       orgId: org.id,
       email: t.email,

@@ -3,7 +3,8 @@ import { Bot } from "lucide-react";
 import { db } from "@/db";
 import { apiKeys, users } from "@/db/schema";
 import { CopyButton } from "@/components/copy-button";
-import { Badge, Card, EmptyState, List, PageHeader, SectionTitle } from "@/components/ui";
+import { Badge, Card, EmptyState, List, Notice, PageHeader, SectionTitle } from "@/components/ui";
+import { demoRestriction } from "@/lib/demo";
 import { appBaseUrl } from "@/lib/invites";
 import { fmtDateTime, fmtDay } from "@/lib/time";
 import { SubmitButton } from "../_components/action-form";
@@ -25,7 +26,8 @@ const SAMPLE_SCHEDULE_PROMPT = `Draft next week's rehearsals for our show: Mon &
 
 export default async function ApiKeysPage({ searchParams }: PageProps<"/org/api-keys">) {
   const sp = await searchParams;
-  const { org, orgs } = await resolveAdminOrg(sp.org);
+  const { user, org, orgs } = await resolveAdminOrg(sp.org);
+  const demoNotice = demoRestriction(user.email, "create API keys");
   const mcpUrl = `${await appBaseUrl()}/api/mcp`;
 
   const keys = await db
@@ -53,9 +55,13 @@ export default async function ApiKeysPage({ searchParams }: PageProps<"/org/api-
       </Card>
 
       <SectionTitle>Create a key</SectionTitle>
-      <Card>
-        <CreateKeyForm orgId={org.id} mcpUrl={mcpUrl} />
-      </Card>
+      {demoNotice ? (
+        <Notice tone="warn">{demoNotice}</Notice>
+      ) : (
+        <Card>
+          <CreateKeyForm orgId={org.id} mcpUrl={mcpUrl} />
+        </Card>
+      )}
 
       <SectionTitle>Active keys</SectionTitle>
       {active.length === 0 ? (

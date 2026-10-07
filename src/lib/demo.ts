@@ -24,3 +24,13 @@ export function demoEnabled() {
 export function isDemoEmail(email: string) {
   return DEMO_ACCOUNTS.some((a) => a.email === email);
 }
+
+/**
+ * Anyone on the internet can become a demo account, so the demo can't be allowed to reach out of
+ * the sandbox: no invite links to real inboxes, no API keys, no changing who an email points at.
+ * Returns the message to show, or null when the action is fine.
+ */
+export function demoRestriction(email: string, what = "do that"): string | null {
+  if (!demoEnabled() || !isDemoEmail(email)) return null;
+  return `Demo accounts can't ${what}. Create your own company to try it for real.`;
+}

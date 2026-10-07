@@ -3,10 +3,11 @@ import { db } from "@/db";
 import { creativeTeam, orgMembers, productions, users } from "@/db/schema";
 import { Avatar, Badge, Card, Field, Input, List, PageHeader, SectionTitle, Select } from "@/components/ui";
 import { ActionForm, SubmitButton } from "../_components/action-form";
+import { Disclosure } from "../_components/disclosure";
 import { OrgChrome } from "../_components/org-chrome";
 import { PendingInvites } from "../_components/pending-invites";
 import { getPendingInvites, resolveAdminOrg } from "../_lib/org";
-import { inviteMember, removeMember, setMemberRole } from "./actions";
+import { inviteMember, issuePasswordResetLink, removeMember, setMemberRole } from "./actions";
 
 export const metadata = { title: "Members" };
 
@@ -75,51 +76,76 @@ export default async function MembersPage({ searchParams }: PageProps<"/org/memb
         {members.map((m) => {
           const isLastAdmin = m.role === "admin" && adminCount <= 1;
           const roles = titlesByUser.get(m.user.id) ?? [];
+          const firstName = m.user.name.trim().split(/\s+/)[0] || m.user.name;
           return (
-            <div key={m.user.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <Avatar name={m.user.name} />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-medium">{m.user.name}</span>
-                    {m.role === "admin" ? <Badge tone="accent">Admin</Badge> : null}
-                    {m.user.id === me.id ? <Badge>You</Badge> : null}
+            <div key={m.user.id} className="px-4 py-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <Avatar name={m.user.name} />
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-medium">{m.user.name}</span>
+                      {m.role === "admin" ? <Badge tone="accent">Admin</Badge> : null}
+                      {m.user.id === me.id ? <Badge>You</Badge> : null}
+                    </div>
+                    <div className="truncate text-sm text-muted">{m.user.email}</div>
+                    {roles.length ? <div className="mt-0.5 text-xs text-muted">{roles.join(" · ")}</div> : null}
                   </div>
-                  <div className="truncate text-sm text-muted">{m.user.email}</div>
-                  {roles.length ? <div className="mt-0.5 text-xs text-muted">{roles.join(" · ")}</div> : null}
+                </div>
+                <div className="flex shrink-0 gap-2 pl-12 sm:pl-0">
+                  {!isLastAdmin ? (
+                    <form action={setMemberRole}>
+                      <input type="hidden" name="orgId" value={org.id} />
+                      <input type="hidden" name="userId" value={m.user.id} />
+                      <input type="hidden" name="role" value={m.role === "admin" ? "member" : "admin"} />
+                      <SubmitButton
+                        confirm={
+                          m.role === "admin"
+                            ? m.user.id === me.id
+                              ? "Remove your own admin access? You keep your account but can no longer manage people, invites or productions."
+                              : `Remove admin access for ${m.user.name}? They keep their account but can no longer manage people, invites or productions.`
+                            : `Make ${m.user.name} an admin? They can manage everyone in ${org.name}, every production, invites and API keys.`
+                        }
+                      >
+                        {m.role === "admin" ? "Make member" : "Make admin"}
+                      </SubmitButton>
+                    </form>
+                  ) : null}
+                  {!isLastAdmin ? (
+                    <form action={removeMember}>
+                      <input type="hidden" name="orgId" value={org.id} />
+                      <input type="hidden" name="userId" value={m.user.id} />
+                      <SubmitButton variant="danger" confirm={`Remove ${m.user.name} from ${org.name}? They lose access to every production here.`}>
+                        Remove
+                      </SubmitButton>
+                    </form>
+                  ) : (
+                    <span className="text-xs text-muted">Only admin</span>
+                  )}
                 </div>
               </div>
-              <div className="flex shrink-0 gap-2 pl-12 sm:pl-0">
-                {!isLastAdmin ? (
-                  <form action={setMemberRole}>
+              {/* Password help without a mailer: a one-time link the admin can text them. */}
+              <Disclosure className="pl-12 sm:pl-0">
+                <summary className="inline-flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-accent">
+                  Reset password
+                </summary>
+                <div className="mt-1 rounded-xl border border-line bg-surface-2 p-3">
+                  <p className="mb-3 text-sm text-muted">
+                    Get a one-time link for {firstName} to choose a new password. It expires in 1 hour, and using it signs them out of
+                    every other device.
+                  </p>
+                  <ActionForm
+                    action={issuePasswordResetLink}
+                    submitLabel="Get reset link"
+                    submitVariant="secondary"
+                    pendingLabel="Creating…"
+                    linkNote="Send it by text or read it out in person. It works once and expires in 1 hour."
+                  >
                     <input type="hidden" name="orgId" value={org.id} />
                     <input type="hidden" name="userId" value={m.user.id} />
-                    <input type="hidden" name="role" value={m.role === "admin" ? "member" : "admin"} />
-                    <SubmitButton
-                      confirm={
-                        m.role === "admin"
-                          ? m.user.id === me.id
-                            ? "Remove your own admin access? You keep your account but can no longer manage people, invites or productions."
-                            : `Remove admin access for ${m.user.name}? They keep their account but can no longer manage people, invites or productions.`
-                          : `Make ${m.user.name} an admin? They can manage everyone in ${org.name}, every production, invites and API keys.`
-                      }
-                    >
-                      {m.role === "admin" ? "Make member" : "Make admin"}
-                    </SubmitButton>
-                  </form>
-                ) : null}
-                {!isLastAdmin ? (
-                  <form action={removeMember}>
-                    <input type="hidden" name="orgId" value={org.id} />
-                    <input type="hidden" name="userId" value={m.user.id} />
-                    <SubmitButton variant="danger" confirm={`Remove ${m.user.name} from ${org.name}? They lose access to every production here.`}>
-                      Remove
-                    </SubmitButton>
-                  </form>
-                ) : (
-                  <span className="text-xs text-muted">Only admin</span>
-                )}
-              </div>
+                  </ActionForm>
+                </div>
+              </Disclosure>
             </div>
           );
         })}

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { apiKeys } from "@/db/schema";
 import { requireOrgAdmin } from "@/lib/access";
+import { demoRestriction } from "@/lib/demo";
 import { createApiKey } from "@/lib/mcp/keys";
 
 export type CreateKeyState = { error?: string; key?: string; name?: string };
@@ -19,6 +20,9 @@ export async function createKeyAction(_prev: CreateKeyState, formData: FormData)
   const parsed = createSchema.safeParse({ orgId: formData.get("orgId"), name: formData.get("name") });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Please check the form." };
   const { user, org } = await requireOrgAdmin(parsed.data.orgId);
+  // A key acts as this admin from outside the app, and anyone can become a demo admin.
+  const restricted = demoRestriction(user.email, "create API keys");
+  if (restricted) return { error: restricted };
   const { key } = await createApiKey({ orgId: org.id, userId: user.id, name: parsed.data.name });
   revalidatePath("/org/api-keys");
   return { key, name: parsed.data.name };

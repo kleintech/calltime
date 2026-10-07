@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, EyeOff } from "lucide-react";
+import Link from "next/link";
 import { useActionState, useState, useTransition, type FormEvent } from "react";
 import { Button, Field, Input, Notice } from "@/components/ui";
 import { acceptAsCurrentUser, acceptWithNewAccount, signInAndAccept, type AcceptState } from "./actions";
@@ -19,7 +20,8 @@ function useKeepValuesAction(action: Action) {
   return { state, onSubmit, pending };
 }
 
-function PasswordInput({ autoComplete }: { autoComplete: "new-password" | "current-password" }) {
+/** Password field with a show/hide toggle. Also used by the password-reset page. */
+export function PasswordInput({ autoComplete }: { autoComplete: "new-password" | "current-password" }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
@@ -83,6 +85,11 @@ export function SignInAcceptForm({ token, email, cta }: { token: string; email: 
       <Field label={`Password for ${email}`}>
         <PasswordInput autoComplete="current-password" />
       </Field>
+      <p className="-mt-2 text-right">
+        <Link href="/login/forgot" className="inline-flex min-h-11 items-center text-sm font-medium text-accent">
+          Forgot password?
+        </Link>
+      </p>
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? "Signing in…" : cta}
       </Button>

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { guardianships, people, users } from "@/db/schema";
 import { hashPassword, normalizeEmail, requireUser, revokeOtherSessions, verifyPassword } from "@/lib/auth";
+import { demoRestriction } from "@/lib/demo";
 import { createInvite } from "@/lib/invites";
 import { firstIssue, type FormState } from "../org/_components/form-state";
 import { messageForInvite } from "../org/_lib/org";
@@ -30,6 +31,9 @@ export async function updateProfile(_: FormState, fd: FormData): Promise<FormSta
 
 export async function changePassword(_: FormState, fd: FormData): Promise<FormState> {
   const user = await requireUser();
+  // Demo accounts are shared by every visitor; a new password would lock everyone else out.
+  const restricted = demoRestriction(user.email, "change the demo account's password");
+  if (restricted) return { error: restricted };
   const parsed = z
     .object({
       current: z.string(),
@@ -69,6 +73,8 @@ export async function inviteCoGuardian(_: FormState, fd: FormData): Promise<Form
     .limit(1);
   if (!link) return { error: "You can only invite guardians for your own kids." };
   if (parsed.data.email === user.email) return { error: "That's your own email — use theirs." };
+  const restricted = demoRestriction(user.email, "send invites");
+  if (restricted) return { error: restricted };
   const { invite, url } = await createInvite({
     orgId: link.minor.orgId,
     email: parsed.data.email,

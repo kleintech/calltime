@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { apiKeys, orgMembers, organizations, users } from "@/db/schema";
 import { randomToken, sha256 } from "@/lib/auth";
+import { demoRestriction } from "@/lib/demo";
 
 /**
  * API keys for the MCP endpoint. Format: "ct_" + 32 url-safe random chars. Only the sha256 is
@@ -47,6 +48,9 @@ export async function verifyApiKey(token: string | undefined | null): Promise<Mc
     .limit(1);
   const hit = rows[0];
   if (!hit) return null;
+  // Keys minted by a public demo account (possibly before the demo lockdown) act for the whole demo
+  // org; on a DEMO_MODE deployment they're dead.
+  if (demoRestriction(hit.user.email, "use API keys")) return null;
   if (!hit.user.isPlatformAdmin) {
     const m = await db.query.orgMembers.findFirst({
       where: and(eq(orgMembers.orgId, hit.org.id), eq(orgMembers.userId, hit.user.id)),

@@ -1,5 +1,5 @@
 import { eq, inArray } from "drizzle-orm";
-import { CalendarPlus, ChevronRight, HandHeart, LogOut, Shield } from "lucide-react";
+import { CalendarCheck, CalendarPlus, ChevronRight, HandHeart, LogOut, Shield } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/db";
 import { guardianships, organizations, people } from "@/db/schema";
@@ -7,6 +7,7 @@ import { Avatar, Badge, Button, Card, Field, Input, List, PageHeader, SectionTit
 import { getUserOrgs, getUserProductions } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { vapidPublicKey } from "@/lib/push";
+import { fmtDay } from "@/lib/time";
 import { countOpenShifts, fmtWhen, getMySignups, isUpcoming } from "@/lib/volunteers";
 import { ActionForm } from "../org/_components/action-form";
 import { currentRoles } from "../org/_lib/org";
@@ -38,6 +39,8 @@ export default async function AccountPage() {
   const activeShows = shows.filter((s) => s.production.status !== "closed");
   const openCounts = await countOpenShifts(activeShows.map((s) => s.production.id));
   const myUpcoming = mySignups.filter((m) => isUpcoming(m.shift));
+  // Dates on this page render in the org's timezone, like the Calls home.
+  const accountTz = own[0]?.org.timezone ?? orgs[0]?.org.timezone ?? "America/New_York";
   const tzOf = new Map([...own, ...wards].map((r) => [r.org.id, r.org.timezone]));
   const multiOrg = new Set([...own, ...wards].map((r) => r.org.id)).size > 1;
 
@@ -179,13 +182,29 @@ export default async function AccountPage() {
 
       <SectionTitle>Calendar</SectionTitle>
       <Link href="/home/calendar" className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-4 hover:bg-surface-2">
-        <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-gold-soft text-gold">
-          <CalendarPlus className="size-5" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-medium">Add calls to my calendar</span>
-          <span className="block text-sm text-muted">Subscribe once in Google, Apple or Outlook — changes sync on their own.</span>
-        </span>
+        {user.calendarConnectedAt ? (
+          <>
+            <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success">
+              <CalendarCheck className="size-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium">Calendar sync on</span>
+              <span className="block text-sm text-muted">
+                Connected {fmtDay(user.calendarConnectedAt, accountTz)}. Manage or reset the link.
+              </span>
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-gold-soft text-gold">
+              <CalendarPlus className="size-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium">Add calls to my calendar</span>
+              <span className="block text-sm text-muted">Subscribe once in Google, Apple or Outlook — changes sync on their own.</span>
+            </span>
+          </>
+        )}
         <ChevronRight className="size-4 shrink-0 text-muted" />
       </Link>
 

@@ -4,9 +4,12 @@ import { and, count, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { invites, orgMembers } from "@/db/schema";
+import { invites, orgMembers, users } from "@/db/schema";
 import { requireOrgAdmin } from "@/lib/access";
 import { normalizeEmail } from "@/lib/auth";
+import { demoRestriction } from "@/lib/demo";
+import { emailConfigured } from "@/lib/email";
+import { issuePasswordReset, sendPasswordResetEmail } from "@/lib/password-reset";
 import { firstIssue, type FormState } from "../_components/form-state";
 import { grantOrgRoleByEmail } from "../_lib/members";
 
@@ -93,4 +96,37 @@ export async function revokeInvite(fd: FormData) {
   await requireOrgAdmin(orgId);
   await db.delete(invites).where(and(eq(invites.id, inviteId), eq(invites.orgId, orgId)));
   revalidateOrg(orgId);
+}
+
+/**
+ * A one-time password reset link for a member, for admins to send by text or in person when the
+ * member can't get email (or this Calltime has no mailer). Emailed too when the mailer is set up.
+ */
+export async function issuePasswordResetLink(_: FormState, fd: FormData): Promise<FormState> {
+  const parsed = memberSchema.safeParse({ orgId: fd.get("orgId"), userId: fd.get("userId") });
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  const { orgId, userId } = parsed.data;
+  const { user: me, org } = await requireOrgAdmin(orgId);
+  const demo = demoRestriction(me.email, "send reset links");
+  if (demo) return { error: demo };
+  const [target] = await db
+    .select({ user: users })
+    .from(orgMembers)
+    .innerJoin(users, eq(users.id, orgMembers.userId))
+    .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)))
+    .limit(1);
+  if (!target) return { error: "That person isn't a member here any more." };
+  const { url } = await issuePasswordReset(userId, { issuedByUserId: me.id });
+  let emailed = false;
+  if (emailConfigured()) {
+    const sent = await sendPasswordResetEmail(target.user, url, { requestedBy: `${me.name} at ${org.name}` });
+    emailed = sent.ok;
+    if (!sent.ok) console.error("[password-reset] email failed:", sent.reason);
+  }
+  const first = target.user.name.trim().split(/\s+/)[0] || target.user.name;
+  return {
+    ok: `Reset link for ${target.user.name} — expires in 1 hour.${emailed ? ` We also emailed it to ${target.user.email}.` : ""}`,
+    link: url,
+    message: `Hi ${first}, here's a link to set a new Calltime password: ${url} (it expires in an hour).`,
+  };
 }

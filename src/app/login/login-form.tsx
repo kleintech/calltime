@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useTransition } from "react";
 import { Button, Field, Input, Notice } from "@/components/ui";
 import { login, type LoginState } from "./actions";
@@ -25,6 +26,11 @@ export function LoginForm({ next }: { next?: string }) {
       <Field label="Password">
         <Input name="password" type="password" autoComplete="current-password" required />
       </Field>
+      <p className="-mt-2 text-right">
+        <Link href="/login/forgot" className="inline-flex min-h-11 items-center text-sm font-medium text-accent">
+          Forgot password?
+        </Link>
+      </p>
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? "Signing in…" : "Sign in"}
       </Button>

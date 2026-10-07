@@ -24,6 +24,7 @@ export function ActionForm({
   submitVariant = "primary",
   className,
   resetOnSuccess = false,
+  linkNote,
 }: {
   action: (state: FormState, formData: FormData) => Promise<FormState>;
   children: ReactNode;
@@ -32,6 +33,8 @@ export function ActionForm({
   submitVariant?: Variant;
   className?: string;
   resetOnSuccess?: boolean;
+  /** Footnote under a returned link (defaults to the invite wording). */
+  linkNote?: string;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(action, {});
   const [, startTransition] = useTransition();
@@ -59,7 +62,7 @@ export function ActionForm({
           <Notice tone="danger">{state.error}</Notice>
         </div>
       ) : null}
-      {state.link ? <InviteLinkBox key={state.link} url={state.link} title={state.ok} message={state.message} /> : null}
+      {state.link ? <InviteLinkBox key={state.link} url={state.link} title={state.ok} message={state.message} note={linkNote} /> : null}
       {children}
       <Button type="submit" variant={submitVariant} disabled={pending} className="w-full sm:w-auto">
         {pending ? pendingLabel : submitLabel}
@@ -68,12 +71,12 @@ export function ActionForm({
   );
 }
 
-export function InviteLinkBox({ url, title, message }: { url: string; title?: string; message?: string }) {
+export function InviteLinkBox({ url, title, message, note }: { url: string; title?: string; message?: string; note?: string }) {
   return (
     <div role="status" className="space-y-3 rounded-xl border border-gold/40 bg-gold-soft p-3">
       <p className="font-medium text-ink">{title ?? "Invite link ready"}</p>
       <ShareInvite url={url} message={message ?? url} />
-      <p className="text-xs text-muted">Send it by text, email or the group chat. It works once and expires in 30 days.</p>
+      <p className="text-xs text-muted">{note ?? "Send it by text, email or the group chat. It works once and expires in 30 days."}</p>
     </div>
   );
 }

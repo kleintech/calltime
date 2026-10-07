@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { guardianships, people } from "@/db/schema";
 import { requireOrgAdmin } from "@/lib/access";
 import { normalizeEmail } from "@/lib/auth";
+import { demoRestriction } from "@/lib/demo";
 import { createInvite } from "@/lib/invites";
 import { ActionError, deleteCallsTargeting } from "@/lib/production-queries";
 import { firstIssue, type FormState } from "../_components/form-state";
@@ -91,9 +92,14 @@ export async function createPerson(_: FormState, fd: FormData): Promise<FormStat
 }
 
 export async function updatePerson(_: FormState, fd: FormData): Promise<FormState> {
-  const { person } = await authorizePerson(fd.get("personId"));
+  const { user, person } = await authorizePerson(fd.get("personId"));
   const parsed = readPerson(fd);
   if (!parsed.success) return { error: firstIssue(parsed.error) };
+  // The email on file decides who may claim this record; demo admins may fill a blank, not replace.
+  if (person.email && parsed.data.email !== normalizeEmail(person.email)) {
+    const restricted = demoRestriction(user.email, "change email addresses");
+    if (restricted) return { error: restricted };
+  }
   await db.update(people).set(parsed.data).where(eq(people.id, person.id));
   revalidatePeople(person.id);
   return { ok: "Saved." };
@@ -195,6 +201,8 @@ export async function removeGuardianship(fd: FormData) {
 export async function invitePerson(_: FormState, fd: FormData): Promise<FormState> {
   const { user, person } = await authorizePerson(fd.get("personId"));
   if (person.userId) return { error: `${personName(person)} already has an account.` };
+  const restricted = demoRestriction(user.email, "send invites");
+  if (restricted) return { error: restricted };
   const email = optEmail.safeParse(str(fd, "email"));
   if (!email.success || !email.data) return { error: "Enter the email address they'll sign in with." };
   if (!person.email) await db.update(people).set({ email: email.data }).where(and(eq(people.id, person.id), isNull(people.email)));
@@ -226,6 +234,8 @@ export async function inviteGuardian(_: FormState, fd: FormData): Promise<FormSt
     .object({ name: z.string().trim().max(120), email: z.email("Enter the guardian's email address.") })
     .safeParse({ name: str(fd, "name"), email: normalizeEmail(str(fd, "email")) });
   if (!parsed.success) return { error: firstIssue(parsed.error) };
+  const restricted = demoRestriction(user.email, "send invites");
+  if (restricted) return { error: restricted };
   const { invite, url } = await createInvite({
     orgId: person.orgId,
     email: parsed.data.email,
