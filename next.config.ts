@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Self-contained server bundle for the container image (lab k3s); Vercel ignores it.
+  // Self-contained server bundle for the container image (lab k3s). Vercel supports standalone output,
+  // but no Vercel deploy has been built with it yet: verify with a preview deploy before the next prod one.
   output: "standalone",
   /*
    * Load the Neon driver and Drizzle from node_modules instead of bundling them. Bundled, the

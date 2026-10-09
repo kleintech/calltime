@@ -17,15 +17,28 @@ import { drizzle } from "drizzle-orm/neon-serverless";
 import { migrate } from "drizzle-orm/neon-serverless/migrator";
 import ws from "ws";
 
-config({ path: ".env.local" });
+// Only fall back to .env.local when no database is set in the environment. Otherwise a caller that
+// exports just DATABASE_URL (e.g. the dev k3s DB) would get DATABASE_URL_UNPOOLED from .env.local,
+// which points at production, and migrate the wrong database.
+const fromEnv = !!process.env.DATABASE_URL;
+if (!fromEnv) config({ path: ".env.local" });
 neonConfig.webSocketConstructor = ws;
 
 const folder = join(process.cwd(), "drizzle");
+// With .env.local skipped, DATABASE_URL_UNPOOLED can only come from the same environment.
 const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
 if (!url) {
   console.error("db:migrate: DATABASE_URL is not set.");
   process.exit(1);
 }
+const host = (() => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "(unparseable URL)";
+  }
+})();
+console.log(`db:migrate: target ${host} (from ${fromEnv ? "environment" : ".env.local"})`);
 
 type Journal = { entries: { idx: number; when: number; tag: string }[] };
 

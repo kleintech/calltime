@@ -87,13 +87,25 @@ docker build -t registry.lab.kleincogroup.com/calltime/calltime:$SHA . && docker
 kubectl -n dev-calltime apply -k k8s/
 ```
 
-`.env.k3s` (gitignored) holds the dev database URL (from `DEVDB_*` in `.env.local`) plus the VAPID keys.
 The image runs the bare `npm run build:app`, so it never touches a database at build time.
 
-Runtime config lives in the Secret `calltime-env` (DATABASE_URL, VAPID_*, APP_URL, DEMO_MODE),
-created with `kubectl -n dev-calltime create secret generic calltime-env --from-env-file=<file>`
-and never committed. Seed the dev database with its URL exported, e.g.
-`set -a; . ./.env.k3s; set +a; npx tsx scripts/seed.ts --yes-wipe`.
+`.env.k3s` (gitignored) is the dev environment file: `DATABASE_URL` and `DATABASE_URL_UNPOOLED` from the
+`DEVDB_*` values in `.env.local`, dev-only VAPID keys (`npx web-push generate-vapid-keys`; never reuse
+production's), `VAPID_SUBJECT`, `APP_URL=https://calltime.lab.kleincogroup.com`, `DEMO_MODE=1`, and
+`SEED_ADMIN_PASSWORD` for seeding. `scripts/migrate.ts` and `scripts/seed.ts` print the database host
+they target; migrate only reads `.env.local` when no `DATABASE_URL` is exported.
+
+The pod's runtime config is the Secret `calltime-env`, built from the runtime keys only (never committed;
+`--from-env-file` keeps quotes literally, hence the `sed`):
+
+```bash
+grep -E '^(DATABASE_URL|VAPID_PUBLIC_KEY|VAPID_PRIVATE_KEY|VAPID_SUBJECT|NEXT_PUBLIC_VAPID_PUBLIC_KEY|APP_URL|DEMO_MODE)=' .env.k3s \
+  | sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' \
+  | kubectl -n dev-calltime create secret generic calltime-env --from-env-file=/dev/stdin --dry-run=client -o yaml \
+  | kubectl apply -f -
+```
+
+Reseed the dev database: `set -a; . ./.env.k3s; set +a; npx tsx scripts/seed.ts --yes-wipe`.
 
 ### Connect Claude (MCP)
 
