@@ -41,10 +41,10 @@ npm run db:seed -- --yes-wipe  # WIPES that database and loads the demo company
 npm run dev                    # http://localhost:3000
 ```
 
-**Which database?** Local and production currently share the project's Neon database, so
-`vercel link && vercel env pull .env.local` hands you the **production** `DATABASE_URL` — seeding it
-wipes the live demo. For local work create a Neon branch (Neon console → Branches, or
-`neonctl branches create --name dev`) and put its connection string in `.env.local`. The seed refuses
+**Which database?** `vercel link && vercel env pull .env.local` hands you the **production**
+`DATABASE_URL` — seeding it wipes the live demo. There is a separate dev database (`calltime-dev-db`),
+pulled into the same file as `DEVDB_DATABASE_URL` / `DEVDB_DATABASE_URL_UNPOOLED`; use those for local
+work (they're what the lab dev deploy below runs on), or create your own Neon branch. The seed refuses
 to run without `--yes-wipe` and prints the host it is about to truncate.
 
 Push notifications need a VAPID key pair: `npx web-push generate-vapid-keys`, then set
@@ -80,9 +80,10 @@ against its **own** Neon database (`calltime-dev-db`, exposed to the Vercel proj
 development env as `DEVDB_*`), not the production one.
 
 ```bash
+export KUBECONFIG=~/.kube/config   # the k3s kubectl otherwise reads /etc/rancher/k3s/k3s.yaml (root-only)
 SHA=$(git rev-parse --short HEAD)
 docker build -t registry.lab.kleincogroup.com/calltime/calltime:$SHA . && docker push registry.lab.kleincogroup.com/calltime/calltime:$SHA
-(cd k8s && kustomize edit set image registry.lab.kleincogroup.com/calltime/calltime:$SHA)  # or edit newTag
+sed -i -E "s/newTag: .*/newTag: $SHA/" k8s/kustomization.yaml
 (set -a; . ./.env.k3s; set +a; npx tsx scripts/migrate.ts)   # migrate the dev DB first
 kubectl -n dev-calltime apply -k k8s/
 ```
