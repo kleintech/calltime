@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.env*
+.vercel
+.claude
+.agents
+k8s
+*.md
+!README.md

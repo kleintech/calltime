@@ -1,0 +1,130 @@
+import "server-only";
+import { createHash, randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
+import { and, eq, gt, ne } from "drizzle-orm";
+import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { cache } from "react";
+import { db } from "@/db";
+import { sessions, users } from "@/db/schema";
+
+export const SESSION_COOKIE = "ct_session";
+const SESSION_DAYS = 60;
+
+export type SessionUser = typeof users.$inferSelect;
+
+export function sha256(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function randomToken(bytes = 24) {
+  return randomBytes(bytes).toString("base64url");
+}
+
+export async function hashPassword(password: string) {
+  return bcrypt.hash(password, 10);
+}
+
+export async function verifyPassword(password: string, hash: string) {
+  return bcrypt.compare(password, hash);
+}
+
+// Compared against when the account doesn't exist (or has no password yet), so a wrong email
+// takes as long as a wrong password and the response time doesn't reveal which emails have accounts.
+const DUMMY_HASH = bcrypt.hashSync(randomToken(16), 10);
+
+/** verifyPassword that always runs bcrypt, even when there is no hash to check against. */
+export async function verifyPasswordOrDummy(password: string, hash: string | null | undefined) {
+  if (!hash) {
+    await bcrypt.compare(password, DUMMY_HASH);
+    return false;
+  }
+  return bcrypt.compare(password, hash);
+}
+
+/**
+ * Creates a session row and sets the cookie. Call from a Server Action or Route Handler.
+ * Any session already in the cookie is revoked first, so signing in never leaves a stale
+ * 60-day session alive for a previous account on the same device.
+ */
+export async function createSession(userId: string) {
+  const store = await cookies();
+  const previous = store.get(SESSION_COOKIE)?.value;
+  if (previous) await db.delete(sessions).where(eq(sessions.id, sha256(previous)));
+  const token = randomToken(32);
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400_000);
+  await db.insert(sessions).values({ id: sha256(token), userId, expiresAt });
+  (await cookies()).set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    expires: expiresAt,
+  });
+}
+
+export async function destroySession() {
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (token) await db.delete(sessions).where(eq(sessions.id, sha256(token)));
+  store.delete(SESSION_COOKIE);
+}
+
+/** The signed-in user, or null. Memoized per request. */
+export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  const rows = await db
+    .select({ user: users })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.id, sha256(token)), gt(sessions.expiresAt, new Date())))
+    .limit(1);
+  return rows[0]?.user ?? null;
+});
+
+/** The signed-in user, or redirect to /login. */
+export async function requireUser(): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  if (!user) {
+    const path = (await headers()).get("x-pathname");
+    const safe = safeNextPath(path);
+    redirect(safe && safe !== "/" ? `/login?next=${encodeURIComponent(safe)}` : "/login");
+  }
+  return user;
+}
+
+export async function requirePlatformAdmin(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!user.isPlatformAdmin) redirect("/home");
+  return user;
+}
+
+/**
+ * A same-origin path to send the user to after sign-in, or null. Rejects absolute and
+ * protocol-relative URLs, backslash tricks ("/\\evil.com"), control characters and anything that
+ * resolves to another host.
+ */
+export function safeNextPath(next: unknown): string | null {
+  if (typeof next !== "string" || next.length === 0 || next.length > 2000) return null;
+  if (!next.startsWith("/") || next.startsWith("//")) return null;
+  if (/[\\\u0000-\u001f\u007f]/.test(next)) return null;
+  try {
+    const u = new URL(next, "http://x");
+    if (u.host !== "x" || u.protocol !== "http:" || !u.pathname.startsWith("/")) return null;
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return null;
+  }
+}
+
+/** Sign out every other session of this user (e.g. after a password change). */
+export async function revokeOtherSessions(userId: string) {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const keep = token ? sha256(token) : "";
+  await db.delete(sessions).where(and(eq(sessions.userId, userId), ne(sessions.id, keep)));
+}
+
+export function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}

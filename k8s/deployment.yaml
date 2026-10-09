@@ -1,0 +1,53 @@
+# Replace every "calltime" with the service name (also in service.yaml, ingress.yaml,
+# kustomization.yaml). The image tag is set in kustomization.yaml, not here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: calltime
+  labels:
+    app.kubernetes.io/name: calltime
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: calltime
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: calltime
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: calltime
+          # Tag/digest is overridden by `images:` in kustomization.yaml.
+          image: registry.lab.kleincogroup.com/calltime/calltime
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+          # DATABASE_URL, VAPID_*, APP_URL, DEMO_MODE. Created out of band, never committed:
+          #   kubectl -n <ns> create secret generic calltime-env --from-env-file=<file>
+          envFrom:
+            - secretRef:
+                name: calltime-env
+          # /login renders without touching the database, so a DB blip doesn't restart the pod.
+          readinessProbe:
+            httpGet: {path: /login, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /login, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
